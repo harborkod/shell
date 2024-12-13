@@ -4,45 +4,44 @@
 update_centos_repo() {
     echo "Updating CentOS repositories to Aliyun mirrors..."
     
+    # 先修复 yum
+    if [ -f ./fix_yum_direct.sh ]; then
+        echo "Fixing yum first..."
+        bash ./fix_yum_direct.sh
+    fi
+    
     # 备份原有的 repo 文件
     sudo mkdir -p /etc/yum.repos.d/backup
-    sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/
+    sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
     
-    # 添加阿里云镜像源
-    sudo tee /etc/yum.repos.d/CentOS-Base.repo << 'EOF'
-[base]
-name=CentOS-$releasever - Base - mirrors.aliyun.com
-failovermethod=priority
-baseurl=http://mirrors.aliyun.com/centos/$releasever/os/$basearch/
-gpgcheck=1
-gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
-
-[updates]
-name=CentOS-$releasever - Updates - mirrors.aliyun.com
-failovermethod=priority
-baseurl=http://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
-gpgcheck=1
-gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
-
-[extras]
-name=CentOS-$releasever - Extras - mirrors.aliyun.com
-failovermethod=priority
-baseurl=http://mirrors.aliyun.com/centos/$releasever/extras/$basearch/
-gpgcheck=1
-gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
-EOF
-
+    # 下载新的 repo 文件
+    wget -O /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to download CentOS-Base.repo"
+        return 1
+    fi
+    
     # 添加 EPEL 源
-    sudo yum install -y epel-release
-    sudo sed -i 's|^#baseurl=http://download.fedoraproject.org/pub|baseurl=http://mirrors.aliyun.com|' /etc/yum.repos.d/epel.repo
-    sudo sed -i 's|^metalink|#metalink|' /etc/yum.repos.d/epel.repo
+    wget -O /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to download epel.repo"
+        return 1
+    fi
 
     # 清除缓存并更新
     echo "Cleaning and updating yum cache..."
-    sudo yum clean all
-    sudo yum makecache
+    yum clean all
+    rm -rf /var/cache/yum/*
+    yum makecache
+
+    # 验证源是否可用
+    if ! yum repolist | grep -E "base|extras|updates|epel" > /dev/null; then
+        echo "Error: Repository verification failed"
+        return 1
+    fi
 
     echo "CentOS repositories have been updated to Aliyun mirrors successfully!"
+    return 0
 }
 
 # 检查是否为 root 用户
@@ -55,3 +54,4 @@ fi
 
 # 执行更新
 update_centos_repo 
+exit $?
