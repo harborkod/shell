@@ -15,14 +15,14 @@ update_centos_repo() {
     sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
     
     # 下载新的 repo 文件
-    wget -O /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
+    curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
     if [ $? -ne 0 ]; then
         echo "Error: Failed to download CentOS-Base.repo"
         return 1
     fi
     
     # 添加 EPEL 源
-    wget -O /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo
+    curl -o /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo
     if [ $? -ne 0 ]; then
         echo "Error: Failed to download epel.repo"
         return 1
