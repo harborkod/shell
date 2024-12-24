@@ -4,12 +4,6 @@
 update_centos_repo() {
     echo "Updating CentOS repositories to Aliyun mirrors..."
     
-    # 先修复 yum
-    if [ -f ./fix_yum_direct.sh ]; then
-        echo "Fixing yum first..."
-        bash ./fix_yum_direct.sh
-    fi
-    
     # 备份原有的 repo 文件
     sudo mkdir -p /etc/yum.repos.d/backup
     sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
