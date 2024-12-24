@@ -35,15 +35,15 @@ check_dependencies() {
 select_java_version() {
     echo -e "\e[31m***************一键安装 Java 任意版本******************\e[0m"
     echo "请选择要安装的 Java 版本："
-    echo "1) jdk-8u202"
+    echo "1) jdk-8u421"
     echo "2) openjdk-11.0.2"
     echo "3) openjdk-17.0.2"
     read -p "请输入序号 (1-3): " choice
 
     case $choice in
         1)
-            jdk_version="jdk-8u202"
-            download_url="https://repo.huaweicloud.com/java/jdk/8u202-b08/jdk-8u202-linux-x64.tar.gz"
+            jdk_version="jdk-8u421"
+            download_url="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/java/jdk-8u421-linux-x64.tar.gz"
             ;;
         2)
             jdk_version="openjdk-11.0.2"
