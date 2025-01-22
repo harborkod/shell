@@ -1,84 +1,233 @@
 #!/bin/bash
 
+# 在文件开头添加日志格式化函数
+print_section() {
+    local title="$1"
+    echo ""
+    echo "┌──────────────────────────────────────────────────────────────┐"
+    echo "│                      $title"
+    echo "└──────────────────────────────────────────────────────────────┘"
+}
+
+print_step() {
+    local message="$1"
+    echo "  → $message"
+}
+
+print_success() {
+    local message="$1"
+    echo "  ✔ $message"
+}
+
+print_error() {
+    local message="$1"
+    echo "  ✘ $message"
+}
+
+print_warning() {
+    local message="$1"
+    echo "  ⚠ $message"
+}
+
+print_info() {
+    local message="$1"
+    echo "  ℹ $message"
+}
+
 # 输出开始安装的提示信息
-echo "-----------------------------开始 Java 安装--------------------------------------"
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║                     Java 安装程序启动                           ║"
+echo "║                     作者: harborkod                            ║"
+echo "║                     版本: 1.0.0                                ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
 start_time=$(date +%s)
 
 # 检查依赖
 check_dependencies() {
-    echo "-----------------------------检查依赖--------------------------------------"
+    print_section "检查系统依赖"
     # 检查是否具有 sudo 权限
     if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
-        echo "错误：此脚本需要 root 权限或 sudo 命令，请以 root 用户运行或确保 sudo 已安装。"
+        print_error "此脚本需要 root 权限或 sudo 命令"
         exit 1
     fi
 
     # 检查 tar、wget 和 unzip
     for cmd in tar wget unzip; do
         if ! command -v $cmd >/dev/null 2>&1; then
-            echo "未检测到 $cmd 命令，正在安装 $cmd..."
+            print_warning "未检测到 $cmd 命令，正在安装 $cmd..."
             if command -v yum >/dev/null 2>&1; then
                 sudo yum install -y $cmd
+                print_success "$cmd 安装完成"
             elif command -v apt-get >/dev/null 2>&1; then
                 sudo apt-get install -y $cmd
+                print_success "$cmd 安装完成"
             else
-                echo "错误：无法自动安装 $cmd，请手动安装后再运行此脚本。"
+                print_error "无法自动安装 $cmd，请手动安装"
                 exit 1
             fi
         else
-            echo "$cmd 已安装"
+            print_success "$cmd 已安装"
         fi
     done
 }
 
 # 检查现有的 Java 安装
 check_existing_java() {
-    echo "-----------------------------检查现有 Java 安装--------------------------------------"
+    print_section "检查现有 Java 安装"
     if command -v java >/dev/null 2>&1; then
-        echo "检测到已安装的 Java 版本："
+        print_info "检测到已安装的 Java 版本："
         java -version 2>&1
         
-        # 检查是否为 OpenJDK
         if java -version 2>&1 | grep -i "openjdk" >/dev/null; then
-            echo "检测到系统已安装 OpenJDK"
-            read -p "是否要卸载现有的 OpenJDK 后继续安装？(y/n): " remove_choice
+            print_warning "检测到系统已安装 OpenJDK"
+            read -p "  是否要卸载现有的 OpenJDK 后继续安装？(y/n): " remove_choice
             if [ "$remove_choice" = "y" ] || [ "$remove_choice" = "Y" ]; then
-                echo "正在卸载 OpenJDK..."
+                print_step "正在卸载 OpenJDK..."
                 if command -v yum >/dev/null 2>&1; then
                     sudo yum remove -y java-* java-*-openjdk-* java-*-openjdk-headless
                 elif command -v apt-get >/dev/null 2>&1; then
                     sudo apt-get remove -y openjdk* java*
                     sudo apt-get autoremove -y
                 else
-                    echo "警告：无法自动卸载 OpenJDK，请手动卸载后再运行此脚本。"
+                    print_error "无法自动卸载 OpenJDK，请手动卸载后再运行此脚本"
                     exit 1
                 fi
-                echo "OpenJDK 已卸载"
+                print_success "OpenJDK 已成功卸载"
             else
-                echo "用户选择保留现有 Java 安装，退出脚本。"
+                print_info "用户选择保留现有 Java 安装"
                 exit 0
             fi
         else
-            echo "检测到已安装其他版本的 Java"
-            read -p "是否继续安装新版本？(y/n): " continue_choice
+            print_warning "检测到已安装其他版本的 Java"
+            read -p "  是否继续安装新版本？(y/n): " continue_choice
             if [ "$continue_choice" != "y" ] && [ "$continue_choice" != "Y" ]; then
-                echo "用户选择不继续安装，退出脚本。"
+                print_info "用户选择不继续安装"
                 exit 0
             fi
         fi
     else
-        echo "未检测到已安装的 Java"
+        print_info "未检测到已安装的 Java"
     fi
+}
+
+# 在 select_java_version 函数前添加卸载选项
+select_operation() {
+    print_section "选择操作"
+    echo "  可用操作:"
+    echo "    1) 安装 Java"
+    echo "    2) 卸载 Java"
+    echo ""
+    read -p "  请选择操作 [1-2]: " operation_choice
+
+    case $operation_choice in
+        1)
+            print_success "已选择: 安装 Java"
+            return 0
+            ;;
+        2)
+            uninstall_java
+            exit 0
+            ;;
+        *)
+            print_error "无效的选择"
+            exit 1
+            ;;
+    esac
+}
+
+# 添加卸载函数
+uninstall_java() {
+    print_section "开始卸载 Java"
+    
+    # 检查系统自带的 OpenJDK
+    if command -v java >/dev/null 2>&1; then
+        print_info "检测到已安装的 Java 版本："
+        java -version 2>&1 | while read -r line; do
+            echo "    $line"
+        done
+        
+        # 卸载系统 OpenJDK
+        if java -version 2>&1 | grep -i "openjdk" >/dev/null; then
+            print_step "卸载系统 OpenJDK..."
+            if command -v yum >/dev/null 2>&1; then
+                sudo yum remove -y java-* java-*-openjdk-* java-*-openjdk-headless
+            elif command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get remove -y openjdk* java*
+                sudo apt-get autoremove -y
+            fi
+            print_success "系统 OpenJDK 已卸载"
+        fi
+    fi
+
+    # 清理通过脚本安装的 Java
+    print_step "清理脚本安装的 Java..."
+    
+    # 清理 alternatives
+    if command -v update-alternatives >/dev/null 2>&1; then
+        ALTERNATIVES_CMD="update-alternatives"
+    elif command -v alternatives >/dev/null 2>&1; then
+        ALTERNATIVES_CMD="alternatives"
+    fi
+
+    if [ -n "$ALTERNATIVES_CMD" ]; then
+        print_step "清理 alternatives 配置..."
+        sudo $ALTERNATIVES_CMD --remove-all java 2>/dev/null
+        sudo $ALTERNATIVES_CMD --remove-all javac 2>/dev/null
+        print_success "Alternatives 配置已清理"
+    fi
+
+    # 清理环境变量文件
+    print_step "清理环境变量配置..."
+    for env_file in /etc/profile.d/java_*.sh; do
+        if [ -f "$env_file" ]; then
+            sudo rm -f "$env_file"
+            print_success "已删除环境变量文件: $env_file"
+        fi
+    done
+
+    # 清理安装目录
+    print_step "清理安装目录..."
+    local java_dirs=("/usr/local/jdk*" "/usr/local/java*" "/usr/local/openjdk*")
+    for dir_pattern in "${java_dirs[@]}"; do
+        for dir in $dir_pattern; do
+            if [ -d "$dir" ]; then
+                sudo rm -rf "$dir"
+                print_success "已删除目录: $dir"
+            fi
+        done
+    done
+
+    # 清理下载文件
+    print_step "清理下载文件..."
+    for file in /opt/jdk*.tar.gz /opt/openjdk*.tar.gz; do
+        if [ -f "$file" ]; then
+            sudo rm -f "$file"
+            print_success "已删除文件: $file"
+        fi
+    done
+
+    # 清理 JAVA_HOME 环境变量
+    print_step "清理当前会话的环境变量..."
+    unset JAVA_HOME
+    
+    print_success "Java 卸载完成"
+    print_warning "请执行以下命令使环境变量生效:"
+    echo "    source /etc/profile"
+    echo ""
+    print_info "如需重新安装 Java，请重新运行此脚本"
 }
 
 # 显示 Java 版本选择菜单
 select_java_version() {
-    echo -e "\e[31m***************一键安装 Java 任意版本******************\e[0m"
-    echo "请选择要安装的 Java 版本："
-    echo "1) jdk-8u421"
-    echo "2) openjdk-11.0.2"
-    echo "3) openjdk-17.0.2"
-    read -p "请输入序号 (1-3): " choice
+    print_section "选择 Java 版本"
+    echo "  可用版本:"
+    echo "    1) Oracle JDK 8u421"
+    echo "    2) OpenJDK 11.0.2"
+    echo "    3) OpenJDK 17.0.2"
+    echo ""
+    read -p "  请选择版本 [1-3]: " choice
 
     case $choice in
         1)
@@ -94,89 +243,87 @@ select_java_version() {
             download_url="https://mirrors.huaweicloud.com/openjdk/17.0.2/openjdk-17.0.2_linux-x64_bin.tar.gz"
             ;;
         *)
-            echo "无效的选择，退出安装。"
+            print_error "无效的选择"
             exit 1
             ;;
     esac
-    echo "您选择了 $jdk_version"
+    print_success "已选择: $jdk_version"
 }
 
 # 清理旧的安装包、安装目录和 alternatives 条目
 cleanup_previous_installation() {
-    echo "-----------------------------清理历史数据--------------------------------------"
-    # 下载目录
+    print_section "清理历史数据"
     download_dir="/opt"
     jdk_package="$download_dir/$(basename $download_url)"
 
-    # 删除已有的安装包
     if [ -f "$jdk_package" ]; then
-        echo "发现已有的安装包：$jdk_package，正在删除..."
+        print_step "清理已有安装包: $jdk_package"
         rm -f "$jdk_package"
+        print_success "安装包清理完成"
     fi
 
-    # 删除旧的安装目录
     install_dir="/usr/local/$jdk_version"
     if [ -d "$install_dir" ]; then
-        echo "发现已有的安装目录：$install_dir，正在删除..."
+        print_step "清理已有安装目录: $install_dir"
         rm -rf "$install_dir"
+        print_success "安装目录清理完成"
     fi
 
-    # 备份并删除旧的环境变量配置文件
     env_file="/etc/profile.d/java_${jdk_version}.sh"
     if [ -f "$env_file" ]; then
-        echo "发现已有的环境变量配置文件：$env_file，正在备份并删除..."
+        print_step "备份环境变量配置文件: $env_file"
         sudo mv "$env_file" "${env_file}.bak_$(date +%Y%m%d%H%M%S)"
+        print_success "配置文件备份完成"
     fi
 
-    # 清理旧的 alternatives 条目
     cleanup_alternatives
 }
 
 # 清理 alternatives 条目
 cleanup_alternatives() {
-    echo "-----------------------------清理 alternatives 条目--------------------------------------"
+    print_section "清理 Alternatives 配置"
     if command -v update-alternatives >/dev/null 2>&1; then
         ALTERNATIVES_CMD="update-alternatives"
     elif command -v alternatives >/dev/null 2>&1; then
         ALTERNATIVES_CMD="alternatives"
     else
-        echo "警告：未找到 update-alternatives 或 alternatives 命令，无法清理 alternatives 条目。"
+        print_warning "未找到 alternatives 命令，跳过清理"
         return
     fi
 
-    # 删除与当前安装目录相关的 alternatives 条目
     if [ -x "$install_dir/bin/java" ]; then
-        echo "正在移除 alternatives 条目：$install_dir/bin/java"
+        print_step "移除 java alternatives 配置"
         sudo $ALTERNATIVES_CMD --remove java "$install_dir/bin/java"
+        print_success "Java alternatives 已清理"
     fi
 
     if [ -x "$install_dir/bin/javac" ]; then
-        echo "正在移除 alternatives 条目：$install_dir/bin/javac"
+        print_step "移除 javac alternatives 配置"
         sudo $ALTERNATIVES_CMD --remove javac "$install_dir/bin/javac"
+        print_success "Javac alternatives 已清理"
     fi
 }
 
 # 下载 JDK 安装包
 download_jdk_package() {
-    echo "-----------------------------下载 JDK 安装包--------------------------------------"
-    # 检查网络连接
+    print_section "下载 JDK 安装包"
+    
     if ! ping -c 1 -W 3 $(echo $download_url | awk -F/ '{print $3}') >/dev/null 2>&1; then
-        echo "错误：无法连接到下载服务器，请检查网络连接。"
+        print_error "无法连接到下载服务器，请检查网络连接"
         exit 1
     fi
 
-    # 下载新的安装包（增加重试机制）
-    echo "正在下载 $jdk_version 安装包..."
+    print_step "开始下载 $jdk_version"
     for i in {1..3}; do
         if wget -P "$download_dir" "$download_url"; then
-            echo "下载完成：$jdk_package"
+            print_success "下载完成: $jdk_package"
             break
         else
-            echo "下载失败，重试第 $i 次..."
+            print_warning "下载失败，第 $i 次重试..."
             sleep 2
         fi
         if [ $i -eq 3 ]; then
-            echo "错误：下载失败，请检查网络连接。"
+            print_error "下载失败，请检查网络连接"
             exit 1
         fi
     done
@@ -184,64 +331,67 @@ download_jdk_package() {
 
 # 创建安装目录
 prepare_installation_directory() {
-    # 检查磁盘空间
-    required_space=500000 # 约500MB
+    print_section "准备安装目录"
+    
+    required_space=500000
     available_space=$(df "$download_dir" | tail -1 | awk '{print $4}')
     if [ "$available_space" -lt "$required_space" ]; then
-        echo "错误：磁盘空间不足，请确保有足够的空间。"
+        print_error "磁盘空间不足，需要至少 500MB 可用空间"
         exit 1
     fi
 
-    # 创建安装目录
     if ! mkdir -p "$install_dir"; then
-        echo "创建目录 $install_dir 失败，请检查权限。"
+        print_error "创建安装目录失败，请检查权限"
         exit 1
     fi
-    echo "安装目录 $install_dir 已创建完成。"
+    print_success "安装目录准备完成: $install_dir"
 }
 
 # 解压 JDK 安装包
 extract_jdk_package() {
-    echo "-----------------------------解压 JDK 安装包--------------------------------------"
+    print_section "解压 JDK 安装包"
+    print_step "正在解压: $jdk_package"
+    
     case "$jdk_package" in
         *.tar.gz|*.tgz)
             if ! tar -xzf "$jdk_package" -C "$install_dir" --strip-components=1; then
-                echo "错误：解压 $jdk_package 时出错。"
+                print_error "解压失败"
                 exit 1
             fi
             ;;
         *.tar)
             if ! tar -xf "$jdk_package" -C "$install_dir" --strip-components=1; then
-                echo "错误：解压 $jdk_package 时出错。"
+                print_error "解压失败"
                 exit 1
             fi
             ;;
         *.zip)
             if ! unzip -q "$jdk_package" -d "$install_dir"; then
-                echo "错误：解压 $jdk_package 时出错。"
+                print_error "解压失败"
                 exit 1
             fi
             ;;
         *)
-            echo "不支持的压缩包格式。"
+            print_error "不支持的压缩包格式"
             exit 1
             ;;
     esac
 
-    echo "JDK 已解压到目录：$install_dir"
-
-    # 检查解压后的目录是否存在
     if [ ! -d "$install_dir/bin" ]; then
-        echo "错误：解压后未找到预期的目录结构。请检查安装包是否完整。"
+        print_error "解压后未找到预期的目录结构"
         exit 1
     fi
+    
+    print_success "解压完成: $install_dir"
 }
 
 # 配置环境变量
 configure_environment_variables() {
-    echo "-----------------------------配置环境变量--------------------------------------"
-    # 创建新的环境变量配置文件
+    print_section "配置环境变量"
+    
     env_file="/etc/profile.d/java_${jdk_version}.sh"
+    print_step "创建环境变量配置文件"
+    
     cat <<EOF | sudo tee "$env_file" >/dev/null
 # Java 环境变量 - $jdk_version
 export JAVA_HOME=$install_dir
@@ -249,60 +399,58 @@ export PATH=\$PATH:\${JAVA_HOME}/bin
 EOF
 
     if [ $? -ne 0 ]; then
-        echo "错误：写入环境变量配置文件失败。"
+        print_error "环境变量配置失败"
         exit 1
     fi
 
-    # 使环境变量生效
     source "$env_file"
-    echo "环境变量已配置，配置文件：$env_file"
-    echo "请重新登录终端或手动运行 'source $env_file' 使环境变量生效。"
+    print_success "环境变量配置完成: $env_file"
 }
 
 # 设置默认的 Java 版本
 set_default_java() {
-    echo "-----------------------------设置默认的 Java 版本--------------------------------------"
-
-    # 检查是否存在 update-alternatives 或 alternatives 命令
+    print_section "配置默认 Java 版本"
+    
     if command -v update-alternatives >/dev/null 2>&1; then
         ALTERNATIVES_CMD="update-alternatives"
     elif command -v alternatives >/dev/null 2>&1; then
         ALTERNATIVES_CMD="alternatives"
     else
-        echo "警告：未找到 update-alternatives 或 alternatives 命令，无法设置默认 Java 版本。"
+        print_warning "未找到 alternatives 命令，跳过配置"
         return
     fi
 
-    # 检查 JAVA_HOME/bin/java 是否存在
     if [ ! -x "$install_dir/bin/java" ]; then
-        echo "错误：未找到 $install_dir/bin/java，可执行文件不存在。"
+        print_error "Java 可执行文件不存在: $install_dir/bin/java"
         exit 1
     fi
 
-    # 注册新的 Java 版本
+    print_step "配置 Java alternatives"
     sudo $ALTERNATIVES_CMD --install /usr/bin/java java "$install_dir/bin/java" 100
     sudo $ALTERNATIVES_CMD --install /usr/bin/javac javac "$install_dir/bin/javac" 100
 
-    # 检查命令是否执行成功
     if [ $? -ne 0 ]; then
-        echo "错误：注册 Java alternatives 失败。"
+        print_error "Alternatives 配置失败"
         exit 1
     fi
 
-    # 将此版本设置为默认
     sudo $ALTERNATIVES_CMD --set java "$install_dir/bin/java"
     sudo $ALTERNATIVES_CMD --set javac "$install_dir/bin/javac"
-    echo "已将 $jdk_version 设置为默认的 Java 版本。"
+    print_success "已设置 $jdk_version 为默认版本"
 }
 
 # 检查 Java 版本
 verify_installation() {
-    echo "-----------------------------检查 Java 版本--------------------------------------"
+    print_section "验证安装结果"
     if command -v java >/dev/null 2>&1; then
-        echo "Java 已安装，版本信息："
-        java -version
+        print_success "Java 安装成功"
+        print_info "版本信息:"
+        java -version 2>&1 | while read -r line; do
+            echo "    $line"
+        done
     else
-        echo "错误：Java 安装失败，请重新登录终端或手动运行 'source /etc/profile.d/java_${jdk_version}.sh'，然后重试。"
+        print_error "Java 安装失败"
+        print_warning "请运行: source /etc/profile.d/java_${jdk_version}.sh"
         exit 1
     fi
 }
@@ -311,14 +459,26 @@ verify_installation() {
 finish_installation() {
     end_time=$(date +%s)
     execution_time=$((end_time - start_time))
-    echo "-----------------------------恭喜！Java 安装成功--------------------------------------"
-    echo "脚本执行时间：${execution_time} 秒"
-    echo "请重新登录终端或手动运行 'source /etc/profile.d/java_${jdk_version}.sh' 使环境变量生效。"
+    
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                        安装完成                                ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    print_success "Java 安装成功"
+    print_info "安装用时: ${execution_time} 秒"
+    print_info "Java 版本: $(java -version 2>&1 | head -n 1)"
+    print_info "安装路径: $install_dir"
+    echo ""
+    print_warning "请执行以下命令使环境变量生效:"
+    echo "    source /etc/profile.d/java_${jdk_version}.sh"
+    echo ""
 }
 
-# 主程序
+# 修改主程序，添加操作选择
 main() {
     check_dependencies
+    select_operation
     check_existing_java
     select_java_version
     cleanup_previous_installation
