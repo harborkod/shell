@@ -170,9 +170,6 @@ print_section() {
     print_info "└──────────────────────────────────────────────────────────┘"
 }
 
-
-
-
 # 3. JDK 相关函数
 # ======================
 
@@ -793,10 +790,6 @@ jdk_uninstall() {
     print_info "卸载完成"
 }
 
-
-
-
-
 # 4. Maven 相关函数
 # ======================
 
@@ -1206,10 +1199,6 @@ mvn_uninstall() {
     mvn_uninstall_finish
 }
 
-
-
-
-
 # 5. MySQL 相关函数
 # ======================
 mysql_install() {
@@ -1263,27 +1252,73 @@ manage_mysql() {
     # ... MySQL 管理菜单
 }
 
+# CentOS 软件源更新相关函数
+centos_repo_update() {
+    print_section "更新 CentOS 软件源"
+    
+    # 检查系统版本
+    if ! grep -qi "centos" /etc/redhat-release; then
+        print_error "当前系统不是 CentOS，无法更新软件源"
+        exit 1
+    fi
+    
+    # 备份原有的 repo 文件
+    print_step "备份原有软件源配置..."
+    sudo mkdir -p /etc/yum.repos.d/backup
+    sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
+    print_success "原有配置已备份到 /etc/yum.repos.d/backup/"
+    
+    # 下载新的 repo 文件
+    print_step "下载阿里云 CentOS 软件源配置..."
+    if ! curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo; then
+        print_error "下载 CentOS-Base.repo 失败"
+        exit 1
+    fi
+    print_success "CentOS Base 源配置完成"
+    
+    # 添加 EPEL 源
+    print_step "下载阿里云 EPEL 源配置..."
+    if ! curl -o /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo; then
+        print_error "下载 epel.repo 失败"
+        exit 1
+    fi
+    print_success "EPEL 源配置完成"
+
+    # 清除缓存并更新
+    print_step "清理并更新软件源缓存..."
+    yum clean all
+    rm -rf /var/cache/yum/*
+    yum makecache
+    print_success "软件源缓存已更新"
+
+    # 验证源是否可用
+    print_step "验证软件源可用性..."
+    if ! yum repolist | grep -E "base|extras|updates|epel" > /dev/null; then
+        print_error "软件源验证失败"
+        exit 1
+    fi
+    
+    print_success "CentOS 软件源已成功更新为阿里云镜像！"
+}
+
+# 更新主菜单函数
 select_software() {
     print_section "选择软件"
     print_info "请选择要管理的软件:"
-    print_info "1) Java (JDK)"
-    print_info "2) Maven"
-    print_info "3) MySQL"
-    print_info "4) 退出"
+    print_info "1) 更新 CentOS 软件源"
+    print_info "2) Java (JDK)"
+    print_info "3) Maven"
+    print_info "4) MySQL"
+    print_info "5) 退出"
     
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-4]: " software_choice
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-5]: " software_choice
 
     case $software_choice in
-        1)
-            manage_java
-            ;;
-        2)
-            manage_maven
-            ;;
-        3)
-            manage_mysql
-            ;;
-        4)
+        1) centos_repo_update ;;
+        2) manage_java ;;
+        3) manage_maven ;;
+        4) manage_mysql ;;
+        5) 
             print_info "感谢使用，再见！"
             exit 0
             ;;
@@ -1300,6 +1335,7 @@ main() {
     print_info "HarborKod 软件安装管理工具"
     print_info "作者: harborkod"
     print_info "版本: 1.0.0"
+    print_info "GitHub: https://github.com/harborkod"
     select_software
 }
 
