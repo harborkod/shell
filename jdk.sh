@@ -481,26 +481,77 @@ set_default_java() {
     fi
 
     print_step "配置 Java alternatives"
-    sudo $ALTERNATIVES_CMD --install /usr/bin/java java "$install_dir/bin/java" 100
-    sudo $ALTERNATIVES_CMD --install /usr/bin/javac javac "$install_dir/bin/javac" 100
-
-    if [ $? -ne 0 ]; then
-        print_error "Alternatives 配置失败"
-        exit 1
+    
+    # 清理现有的 alternatives 配置
+    print_step "清理现有的 alternatives 配置..."
+    # 获取所有已注册的 Java alternatives 并移除
+    for cmd in java javac; do
+        if $ALTERNATIVES_CMD --display $cmd >/dev/null 2>&1; then
+            $ALTERNATIVES_CMD --display $cmd | grep "alternative" | grep -v "status" | while read -r line; do
+                path=$(echo $line | awk '{print $1}')
+                if [ -n "$path" ] && [ -f "$path" ]; then
+                    sudo $ALTERNATIVES_CMD --remove $cmd "$path" 2>/dev/null
+                fi
+            done
+        fi
+    done
+    
+    # 添加新的配置并设置超高优先级
+    print_step "添加新的 alternatives 配置..."
+    sudo $ALTERNATIVES_CMD --install /usr/bin/java java "$install_dir/bin/java" 2000 \
+        --slave /usr/bin/javac javac "$install_dir/bin/javac" \
+        --slave /usr/bin/jar jar "$install_dir/bin/jar" \
+        --slave /usr/bin/jps jps "$install_dir/bin/jps"
+    
+    # 强制设置为默认版本
+    print_step "设置为默认版本..."
+    sudo $ALTERNATIVES_CMD --set java "$install_dir/bin/java"
+    
+    # 验证设置
+    local current_java=$($ALTERNATIVES_CMD --display java | grep "link currently points to" | awk '{print $NF}')
+    if [ "$current_java" = "$install_dir/bin/java" ]; then
+        # 再次验证实际的 java 命令
+        local java_path=$(which java)
+        if [ -L "$java_path" ] && [ "$(readlink -f $java_path)" = "$install_dir/bin/java" ]; then
+            print_success "已成功设置 $jdk_version 为默认版本"
+            return 0
+        fi
     fi
 
-    sudo $ALTERNATIVES_CMD --set java "$install_dir/bin/java"
-    sudo $ALTERNATIVES_CMD --set javac "$install_dir/bin/javac"
-    print_success "已设置 $jdk_version 为默认版本"
+    print_warning "alternatives 配置可能未完全生效"
+    print_step "执行额外清理..."
+    # 删除旧的 OpenJDK 包
+    if command -v yum >/dev/null 2>&1; then
+        sudo yum remove -y java-*-openjdk* 2>/dev/null
+    elif command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get remove -y openjdk* 2>/dev/null
+    fi
+    
+    # 如果清理后仍然失败，则创建直接链接
+    print_step "创建直接链接..."
+    sudo ln -sf "$install_dir/bin/java" /usr/bin/java
+    sudo ln -sf "$install_dir/bin/javac" /usr/bin/javac
+    
+    if [ -x "/usr/bin/java" ] && [ "$(readlink -f /usr/bin/java)" = "$install_dir/bin/java" ]; then
+        print_success "已通过直接链接设置 Java 版本"
+    else
+        print_error "Java 版本设置失败"
+        exit 1
+    fi
 }
 
 # 检查 Java 版本
 verify_installation() {
     print_section "验证安装结果"
-    if command -v java >/dev/null 2>&1; then
+    
+    # 先刷新环境变量
+    source "/etc/profile.d/java_${jdk_version}.sh"
+    
+    # 直接使用 JAVA_HOME 中的 java 命令进行验证
+    if [ -x "$JAVA_HOME/bin/java" ]; then
         print_success "Java 安装成功"
         print_info "版本信息:"
-        java -version 2>&1 | while read -r line; do
+        "$JAVA_HOME/bin/java" -version 2>&1 | while read -r line; do
             echo "    $line"
         done
     else
@@ -516,13 +567,13 @@ finish_installation() {
     execution_time=$((end_time - start_time))
     
     echo ""
-    echo "╔════════════════════════════════════════════════════════════════╗"
-    echo "║                        安装完成                                ║"
-    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                        ${BOLD}安装完成${NC}${CYAN}                                ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     print_success "Java 安装成功"
     print_info "安装用时: ${execution_time} 秒"
-    print_info "Java 版本: $(java -version 2>&1 | head -n 1)"
+    print_info "Java 版本: $($JAVA_HOME/bin/java -version 2>&1 | head -n 1)"
     print_info "安装路径: $install_dir"
     echo ""
     print_warning "请执行以下命令使环境变量生效:"
