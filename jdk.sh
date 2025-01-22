@@ -84,6 +84,43 @@ echo "╚═══════════════════════�
 echo ""
 start_time=$(date +%s)
 
+# 添加一个新的函数来清理 PATH
+cleanup_path() {
+    # 保存原始 IFS
+    local OIFS="$IFS"
+    IFS=':'
+    
+    # 将 PATH 转换为数组
+    local -a paths=($PATH)
+    # 创建关联数组用于去重
+    declare -A unique_paths
+    
+    # 清理后的 PATH
+    local new_path=""
+    
+    # 遍历所有路径
+    for p in "${paths[@]}"; do
+        # 跳过包含 java 或 jdk 的路径
+        if [[ "$p" != *"java"* ]] && [[ "$p" != *"jdk"* ]]; then
+            # 只添加不重复的路径
+            if [[ -z "${unique_paths[$p]}" ]]; then
+                unique_paths[$p]=1
+                if [ -z "$new_path" ]; then
+                    new_path="$p"
+                else
+                    new_path="$new_path:$p"
+                fi
+            fi
+        fi
+    done
+    
+    # 恢复原始 IFS
+    IFS="$OIFS"
+    
+    # 导出新的 PATH
+    export PATH="$new_path"
+}
+
 # 检查依赖
 check_dependencies() {
     print_section "检查系统依赖"
@@ -182,6 +219,9 @@ select_operation() {
 # 添加卸载函数
 uninstall_java() {
     print_section "开始卸载 Java"
+    
+    # 添加这一行来清理 PATH
+    cleanup_path
     
     # 检查系统自带的 OpenJDK
     if command -v java >/dev/null 2>&1; then
@@ -584,6 +624,7 @@ finish_installation() {
 # 修改主程序，添加操作选择
 main() {
     print_header
+    cleanup_path
     check_dependencies
     select_operation
     check_existing_java
