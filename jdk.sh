@@ -31,6 +31,46 @@ check_dependencies() {
     done
 }
 
+# 检查现有的 Java 安装
+check_existing_java() {
+    echo "-----------------------------检查现有 Java 安装--------------------------------------"
+    if command -v java >/dev/null 2>&1; then
+        echo "检测到已安装的 Java 版本："
+        java -version 2>&1
+        
+        # 检查是否为 OpenJDK
+        if java -version 2>&1 | grep -i "openjdk" >/dev/null; then
+            echo "检测到系统已安装 OpenJDK"
+            read -p "是否要卸载现有的 OpenJDK 后继续安装？(y/n): " remove_choice
+            if [ "$remove_choice" = "y" ] || [ "$remove_choice" = "Y" ]; then
+                echo "正在卸载 OpenJDK..."
+                if command -v yum >/dev/null 2>&1; then
+                    sudo yum remove -y java-* java-*-openjdk-* java-*-openjdk-headless
+                elif command -v apt-get >/dev/null 2>&1; then
+                    sudo apt-get remove -y openjdk* java*
+                    sudo apt-get autoremove -y
+                else
+                    echo "警告：无法自动卸载 OpenJDK，请手动卸载后再运行此脚本。"
+                    exit 1
+                fi
+                echo "OpenJDK 已卸载"
+            else
+                echo "用户选择保留现有 Java 安装，退出脚本。"
+                exit 0
+            fi
+        else
+            echo "检测到已安装其他版本的 Java"
+            read -p "是否继续安装新版本？(y/n): " continue_choice
+            if [ "$continue_choice" != "y" ] && [ "$continue_choice" != "Y" ]; then
+                echo "用户选择不继续安装，退出脚本。"
+                exit 0
+            fi
+        fi
+    else
+        echo "未检测到已安装的 Java"
+    fi
+}
+
 # 显示 Java 版本选择菜单
 select_java_version() {
     echo -e "\e[31m***************一键安装 Java 任意版本******************\e[0m"
@@ -279,6 +319,7 @@ finish_installation() {
 # 主程序
 main() {
     check_dependencies
+    check_existing_java
     select_java_version
     cleanup_previous_installation
     download_jdk_package
