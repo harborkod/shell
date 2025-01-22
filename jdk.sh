@@ -1,37 +1,77 @@
 #!/bin/bash
 
-# 在文件开头添加日志格式化函数
+# 定义颜色代码
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# 格式化输出函数
+print_header() {
+    clear
+    echo ""
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    ${BOLD}Java 安装管理工具${NC}${CYAN}                    ║${NC}"
+    echo -e "${CYAN}║                    作者: harborkod                          ║${NC}"
+    echo -e "${CYAN}║                    版本: 1.0.0                             ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+}
+
 print_section() {
     local title="$1"
+    local title_length=${#title}
+    local padding=$(( (44 - title_length) / 2 ))
     echo ""
-    echo "┌──────────────────────────────────────────────────────────────┐"
-    echo "│                      $title"
-    echo "└──────────────────────────────────────────────────────────────┘"
+    echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${NC}"
+    printf "${BLUE}│${NC}%${padding}s${BOLD}%s${NC}%${padding}s${BLUE}│${NC}\n" "" "$title" ""
+    echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${NC}"
 }
 
 print_step() {
     local message="$1"
-    echo "  → $message"
+    echo -e "${CYAN}  →${NC} $message"
 }
 
 print_success() {
     local message="$1"
-    echo "  ✔ $message"
+    echo -e "${GREEN}  ✔${NC} $message"
 }
 
 print_error() {
     local message="$1"
-    echo "  ✘ $message"
+    echo -e "${RED}  ✘${NC} $message"
 }
 
 print_warning() {
     local message="$1"
-    echo "  ⚠ $message"
+    echo -e "${YELLOW}  ⚠${NC} $message"
 }
 
 print_info() {
     local message="$1"
-    echo "  ℹ $message"
+    echo -e "${BLUE}  ℹ${NC} $message"
+}
+
+print_divider() {
+    echo -e "${BLUE}  ─────────────────────────────────────────────────────────${NC}"
+}
+
+print_menu_item() {
+    local number="$1"
+    local description="$2"
+    echo -e "    ${CYAN}${number}${NC}) ${description}"
+}
+
+print_footer() {
+    echo ""
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                         ${BOLD}操作完成${NC}${CYAN}                         ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
 }
 
 # 输出开始安装的提示信息
@@ -115,11 +155,13 @@ check_existing_java() {
 # 在 select_java_version 函数前添加卸载选项
 select_operation() {
     print_section "选择操作"
-    echo "  可用操作:"
-    echo "    1) 安装 Java"
-    echo "    2) 卸载 Java"
+    echo "  请选择要执行的操作:"
+    print_divider
+    print_menu_item "1" "安装 Java"
+    print_menu_item "2" "卸载 Java"
     echo ""
-    read -p "  请选择操作 [1-2]: " operation_choice
+    read -p "  请输入选项 [1-2]: " operation_choice
+    echo ""
 
     case $operation_choice in
         1)
@@ -173,9 +215,20 @@ uninstall_java() {
 
     if [ -n "$ALTERNATIVES_CMD" ]; then
         print_step "清理 alternatives 配置..."
-        sudo $ALTERNATIVES_CMD --remove-all java 2>/dev/null
-        sudo $ALTERNATIVES_CMD --remove-all javac 2>/dev/null
-        print_success "Alternatives 配置已清理"
+        # 获取所有 Java 相关的 alternatives
+        for cmd in java javac; do
+            # 检查是否存在该命令的 alternatives
+            if $ALTERNATIVES_CMD --display $cmd >/dev/null 2>&1; then
+                # 获取所有安装路径并删除
+                $ALTERNATIVES_CMD --display $cmd | grep "alternative" | grep -v "status" | while read -r line; do
+                    path=$(echo $line | awk '{print $1}')
+                    if [ -n "$path" ] && [ -f "$path" ]; then
+                        sudo $ALTERNATIVES_CMD --remove $cmd "$path" 2>/dev/null
+                    fi
+                done
+                print_success "$cmd alternatives 已清理"
+            fi
+        done
     fi
 
     # 清理环境变量文件
@@ -222,12 +275,14 @@ uninstall_java() {
 # 显示 Java 版本选择菜单
 select_java_version() {
     print_section "选择 Java 版本"
-    echo "  可用版本:"
-    echo "    1) Oracle JDK 8u421"
-    echo "    2) OpenJDK 11.0.2"
-    echo "    3) OpenJDK 17.0.2"
+    echo "  请选择要安装的 Java 版本:"
+    print_divider
+    print_menu_item "1" "Oracle JDK 8u421"
+    print_menu_item "2" "OpenJDK 11.0.2"
+    print_menu_item "3" "OpenJDK 17.0.2"
     echo ""
-    read -p "  请选择版本 [1-3]: " choice
+    read -p "  请输入选项 [1-3]: " choice
+    echo ""
 
     case $choice in
         1)
@@ -477,6 +532,7 @@ finish_installation() {
 
 # 修改主程序，添加操作选择
 main() {
+    print_header
     check_dependencies
     select_operation
     check_existing_java
