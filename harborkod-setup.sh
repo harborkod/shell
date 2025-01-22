@@ -1006,6 +1006,15 @@ mvn_install_download_package() {
         rm -f "$mvn_package"
         exit 1
     fi
+
+    print_step "验证文件完整性..."
+    local EXPECTED_CHECKSUM="21c2be0a180a326353e8f6d12289f74bc7cd53080305f05358936f3a1b6dd4d91203f4cc799e81761cf5c53c5bbe9dcc13bdb27ec8f57ecf21b2f9ceec3c8d27"
+    local ACTUAL_CHECKSUM=$(sha512sum "$mvn_package" | awk '{ print $1 }')
+    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+        print_error "文件校验失败，下载的文件可能已损坏"
+        exit 1
+    fi
+    print_success "文件校验通过"
 }
 
 mvn_install_prepare_directory() {
@@ -1042,47 +1051,174 @@ mvn_install_extract_package() {
     print_success "解压完成: $install_dir"
 }
 
+mvn_install_modify_settings() {
+    print_section "配置 Maven"
+    
+    # 检查本地仓库所需空间
+    print_step "检查本地仓库所需空间..."
+    local available_space_root=$(df / | tail -1 | awk '{print $4}')
+    if [ "$available_space_root" -lt 10000000 ]; then
+        print_error "磁盘空间不足，至少需要 10GB 可用空间"
+        exit 1
+    fi
+    print_success "磁盘空间充足"
+
+    # 设置本地仓库
+    local local_repo="/repo"
+    print_step "配置本地仓库..."
+    if [ ! -d "$local_repo" ]; then
+        mkdir -p "$local_repo"
+        print_success "创建本地仓库目录: $local_repo"
+    fi
+
+    # 备份原始配置文件
+    local settings_file="$install_dir/conf/settings.xml"
+    print_step "备份原始配置..."
+    cp "$settings_file" "$settings_file.bak"
+    print_success "已备份配置文件到: $settings_file.bak"
+
+    # 更新配置文件
+    print_step "更新 Maven 配置..."
+    cat <<EOL > "$settings_file"
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+
+  <localRepository>/repo</localRepository>
+
+  <mirrors>
+      <mirror>
+          <id>aliyunmaven</id>
+          <mirrorOf>*</mirrorOf>
+          <name>阿里云公共仓库</name>
+          <url>https://maven.aliyun.com/repository/public</url>
+      </mirror>
+      <mirror>
+          <id>nexus-163</id>
+          <mirrorOf>*</mirrorOf>
+          <name>Nexus 163</name>
+          <url>http://mirrors.163.com/maven/repository/maven-public/</url>
+      </mirror>
+      <mirror>
+          <id>huaweicloud</id>
+          <mirrorOf>*</mirrorOf>
+          <url>https://repo.huaweicloud.com/repository/maven/</url>
+      </mirror>
+      <mirror>
+          <id>nexus-tencentyun</id>
+          <mirrorOf>*</mirrorOf>
+          <name>Nexus tencentyun</name>
+          <url>http://mirrors.cloud.tencent.com/nexus/repository/maven-public/</url>
+      </mirror>
+  </mirrors>
+
+</settings>
+EOL
+    print_success "Maven 配置文件已更新"
+}
+
+mvn_install_create_user() {
+    print_section "配置用户和权限"
+    
+    local maven_user="maven"
+    local maven_group="maven"
+    
+    # 创建用户组
+    print_step "创建用户组..."
+    if ! getent group "$maven_group" > /dev/null; then
+        groupadd "$maven_group"
+        print_success "已创建用户组: $maven_group"
+    else
+        print_info "用户组已存在: $maven_group"
+    fi
+
+    # 创建用户
+    print_step "创建用户..."
+    if ! id "$maven_user" > /dev/null 2>&1; then
+        useradd -r -g "$maven_group" -s /usr/sbin/nologin "$maven_user"
+        print_success "已创建用户: $maven_user"
+    else
+        print_info "用户已存在: $maven_user"
+    fi
+
+    # 更新权限
+    print_step "更新目录权限..."
+    if [ -d "$install_dir" ]; then
+        chown -R "$maven_user:$maven_group" "$install_dir"
+        print_success "已更新安装目录权限: $install_dir"
+    else
+        print_warning "安装目录不存在: $install_dir"
+    fi
+
+    if [ -d "/repo" ]; then
+        chown -R "$maven_user:$maven_group" "/repo"
+        print_success "已更新仓库目录权限: /repo"
+    else
+        print_warning "本地仓库目录不存在: /repo"
+    fi
+}
+
 mvn_install_configure_env() {
     print_section "配置环境变量"
     
-    env_file="/etc/profile.d/maven_${mvn_version}.sh"
-    print_step "创建环境变量配置文件"
+    # 6.1 设置 Maven 环境变量
+    env_file="/etc/profile.d/maven.sh"
+    print_step "创建环境变量配置..."
     
-    cat <<EOF | sudo tee "$env_file" >/dev/null
-# Maven 环境变量 - $mvn_version
-export MAVEN_HOME=$install_dir
+    # 先清理已存在的 Maven 路径
+    mvn_common_cleanup_path
+    
+    # 检查环境变量文件是否存在
+    if [ -f "$env_file" ]; then
+        print_step "检查现有环境变量配置..."
+        if grep -q "MAVEN_HOME=$install_dir" "$env_file" && \
+           grep -q "M2_HOME=$install_dir" "$env_file"; then
+            print_info "Maven 环境变量已正确配置，无需更改"
+            return 0
+        else
+            print_warning "发现旧的环境变量配置，进行更新..."
+            rm -f "$env_file"
+        fi
+    fi
 
-# 确保 PATH 中不会重复添加 MAVEN_HOME/bin
+    # 创建新的环境变量配置
+    cat <<EOF > "$env_file"
+# Maven 环境变量配置
+export MAVEN_HOME=$install_dir
+export M2_HOME=$install_dir
+
+# 确保 PATH 中不会重复添加 Maven 路径
 if [[ ":\$PATH:" != *":\$MAVEN_HOME/bin:"* ]]; then
     export PATH=\$PATH:\$MAVEN_HOME/bin
 fi
 EOF
 
-    if [ $? -ne 0 ]; then
+    if [ $? -eq 0 ]; then
+        print_success "Maven 环境变量已设置"
+        # 刷新当前会话的环境变量
+        source "$env_file"
+        print_success "环境变量已刷新"
+    else
         print_error "环境变量配置失败"
         exit 1
     fi
-
-    source "$env_file"
-    print_success "环境变量配置完成: $env_file"
 }
 
 mvn_install_verify() {
     print_section "验证安装结果"
     
-    source "/etc/profile.d/maven_${mvn_version}.sh"
+    # 先加载环境变量
+    source "/etc/profile.d/maven.sh"
     
-    if [ -x "$MAVEN_HOME/bin/mvn" ]; then
-        print_success "Maven 安装成功"
-        print_info "版本信息如下:"
-        "$MAVEN_HOME/bin/mvn" -version | while IFS= read -r line; do
-            print_info "$line"
-        done
-    else
+    print_step "检查 Maven 版本..."
+    if ! mvn -v; then
         print_error "Maven 安装失败"
-        print_warning "请运行: source /etc/profile.d/maven_${mvn_version}.sh"
+        print_warning "请检查环境变量是否生效: source /etc/profile.d/maven.sh"
         exit 1
     fi
+    
+    print_success "Maven 安装成功"
 }
 
 mvn_install_finish() {
@@ -1107,6 +1243,8 @@ mvn_install() {
     print_debug "可用磁盘: $(df -h /)"
 
     start_time=$(date +%s)
+    
+    # 按照原有 maven.sh 的流程顺序
     mvn_common_cleanup_path
     mvn_common_check_dependencies
     mvn_install_check_existing
@@ -1115,7 +1253,9 @@ mvn_install() {
     mvn_install_download_package
     mvn_install_prepare_directory
     mvn_install_extract_package
+    mvn_install_modify_settings    # 新增：修改 settings.xml 配置
     mvn_install_configure_env
+    mvn_install_create_user       # 新增：创建用户和权限
     mvn_install_verify
     mvn_install_finish
 }
@@ -1190,6 +1330,18 @@ mvn_uninstall() {
 
     print_info "开始清理 Maven 进程..."
     mvn_common_check_processes
+    
+    # 清理本地仓库
+    if [ -d "$LOCAL_REPO" ]; then
+        print_warning "检测到 Maven 本地仓库: $LOCAL_REPO"
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除本地仓库？(y/n): " remove_repo
+        if [ "$remove_repo" = "y" ] || [ "$remove_repo" = "Y" ]; then
+            rm -rf "$LOCAL_REPO"
+            print_success "已删除本地仓库"
+        else
+            print_info "保留本地仓库"
+        fi
+    fi
     
     print_info "开始清理环境变量..."
     mvn_uninstall_remove_env_files
@@ -1338,6 +1490,15 @@ main() {
     print_info "GitHub: https://github.com/harborkod"
     select_software
 }
+
+# Maven 相关变量
+MAVEN_VERSION="3.8.7"
+MAVEN_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/maven/apache-maven-3.8.7-bin.tar.gz"
+DOWNLOAD_DIR="/opt"
+INSTALL_DIR="/usr/local/apache-maven-3.8.7"
+LOCAL_REPO="/repo"  
+MAVEN_USER="maven"
+MAVEN_GROUP="maven"
 
 # 执行主函数
 main 
