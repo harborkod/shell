@@ -2023,26 +2023,88 @@ centos_repo_update() {
     print_success "CentOS 软件源已成功更新为阿里云镜像！"
 }
 
+# 添加系统依赖检查函数
+check_system_dependencies() {
+    print_section "检查系统依赖"
+    
+    # 检查 root 权限
+    if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
+        print_error "此脚本需要 root 权限或 sudo 命令"
+        exit 1
+    fi
+
+    # 定义依赖项及其对应的包名
+    declare -A dependencies=(
+        ["wget"]="wget"
+        ["tar"]="tar"
+        ["gcc"]="gcc"
+        ["g++"]="gcc-c++"
+        ["make"]="make"
+        ["cmake"]="cmake"
+        ["bison"]="bison"
+        ["perl"]="perl"
+        ["git"]="git"
+        ["curl"]="curl"
+        ["vim"]="vim"
+        ["unzip"]="unzip"
+        ["net-tools"]="net-tools"
+        ["telnet"]="telnet"
+    )
+
+    # 检查每个依赖
+    for cmd in "${!dependencies[@]}"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            print_warning "未检测到 $cmd 命令，正在安装..."
+            if command -v yum >/dev/null 2>&1; then
+                sudo yum install -y "${dependencies[$cmd]}"
+            elif command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y "${dependencies[$cmd]}"
+            elif command -v dnf >/dev/null 2>&1; then
+                sudo dnf install -y "${dependencies[$cmd]}"
+            else
+                print_error "无法找到包管理器（yum/apt-get/dnf），请手动安装 ${dependencies[$cmd]}"
+                exit 1
+            fi
+            if [ $? -eq 0 ]; then
+                print_success "${dependencies[$cmd]} 安装完成"
+            else
+                print_error "${dependencies[$cmd]} 安装失败"
+                exit 1
+            fi
+        else
+            print_success "$cmd 已安装"
+        fi
+    done
+
+    print_success "所有系统依赖检查完成"
+    
+    # 直接返回主菜单
+    select_software
+}
+
 # 更新主菜单函数
 select_software() {
     print_section "选择软件"
     print_info "请选择要管理的软件:"
     print_info "1) 更新 CentOS 软件源"
-    print_info "2) Java (JDK)"
-    print_info "3) Maven"
-    print_info "4) Redis"
-    print_info "5) MySQL"
-    print_info "6) 退出"
+    print_info "2) 检查并安装系统依赖"
+    print_info "3) Java (JDK)"
+    print_info "4) Maven"
+    print_info "5) Redis"
+    print_info "6) MySQL"
+    print_info "7) 退出"
     
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-6]: " software_choice
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-7]: " software_choice
 
     case $software_choice in
         1) centos_repo_update ;;
-        2) manage_java ;;
-        3) manage_maven ;;
-        4) manage_redis ;;
-        5) manage_mysql ;;
-        6) 
+        2) check_system_dependencies ;;
+        3) manage_java ;;
+        4) manage_maven ;;
+        5) manage_redis ;;
+        6) manage_mysql ;;
+        7) 
             print_info "感谢使用，再见！"
             exit 0
             ;;
