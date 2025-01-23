@@ -77,15 +77,14 @@ REDIS_SOURCE_URL="https://mirrors.huaweicloud.com/redis/redis-${REDIS_VERSION}.t
 
 # 标准目录结构
 REDIS_INSTALL_DIR="/usr/local/redis"                # 程序安装目录
-REDIS_CONF_DIR="/etc/redis"                        # 配置文件目录
-REDIS_LOG_DIR="/var/log/redis"                     # 日志目录
-REDIS_DATA_DIR="/var/lib/redis"                    # 数据目录
-REDIS_PID_DIR="/var/run/redis"                     # PID 文件目录
+REDIS_CONF_DIR="/etc/redis"                         # 配置文件目录
+REDIS_LOG_DIR="/var/log/redis"                      # 日志目录
+REDIS_DATA_DIR="/var/lib/redis"                     # 数据目录
+REDIS_PID_DIR="/run/redis"                          # PID 文件目录
 REDIS_SRC_DIR="/usr/local/src/redis-${REDIS_VERSION}"  # 源码目录
 
 
 
-# 全局配置
 # ==============================================
 # 日志输出函数
 print_log() {
@@ -1525,28 +1524,38 @@ redis_install_configure() {
     
     # 创建必要的目录
     print_step "创建标准目录结构..."
-    mkdir -p "$REDIS_CONF_DIR" "$REDIS_LOG_DIR" "$REDIS_DATA_DIR" "$REDIS_PID_DIR"
+    mkdir -p "$REDIS_CONF_DIR" "$REDIS_LOG_DIR" "$REDIS_DATA_DIR"
     
     # 创建配置文件
     print_step "创建配置文件..."
     cat > "${REDIS_CONF_DIR}/redis.conf" <<EOF
-# 网络配置
-bind 0.0.0.0
+# 基本配置
+daemonize yes
+pidfile "${REDIS_PID_DIR}/redis.pid"
 port 6379
-requirepass ${REDIS_PASSWORD}
+bind 0.0.0.0
+timeout 0
 
 # 日志配置
 loglevel notice
 logfile "${REDIS_LOG_DIR}/redis.log"
-pidfile "${REDIS_PID_DIR}/redis.pid"
+
+# 数据目录配置
+dir "${REDIS_DATA_DIR}"
+dbfilename dump.rdb
+
+# 认证配置
+requirepass "${REDIS_PASSWORD}"
+
+# 数据库配置
 databases 16
 
 # 持久化配置
 save 900 1
 save 300 10
 save 60 10000
-dbfilename dump.rdb
-dir ${REDIS_DATA_DIR}
+rdbcompression yes
+rdbchecksum yes
 
 # AOF 配置
 appendonly yes
@@ -1554,11 +1563,18 @@ appendfilename "appendonly.aof"
 appendfsync everysec
 
 # 其他配置
-maxclients 100
-timeout 300
-protected-mode no
-daemonize yes
+no-appendfsync-on-rewrite no
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 64mb
 EOF
+
+    # 设置配置文件权限
+    if ! getent group "$REDIS_GROUP" > /dev/null; then
+        groupadd "$REDIS_GROUP"
+    fi
+    
+    chown root:"$REDIS_GROUP" "${REDIS_CONF_DIR}/redis.conf"
+    chmod 640 "${REDIS_CONF_DIR}/redis.conf"
 
     print_success "配置文件创建完成"
 }
@@ -1579,21 +1595,21 @@ redis_install_create_user() {
         print_success "用户创建完成"
     fi
 
-    # 设置目录权限
-    print_step "设置目录权限..."
+    # 创建并设置目录权限
+    print_step "创建并设置目录权限..."
+    mkdir -p "$REDIS_INSTALL_DIR" "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR" "$REDIS_CONF_DIR"
+    
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_INSTALL_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_DATA_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_LOG_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_PID_DIR"
-    chown -R root:$REDIS_GROUP "$REDIS_CONF_DIR"
+    chown root:"$REDIS_GROUP" "$REDIS_CONF_DIR"
     
-    # 设置权限
     chmod 755 "$REDIS_INSTALL_DIR"
     chmod 750 "$REDIS_DATA_DIR"
     chmod 750 "$REDIS_LOG_DIR"
     chmod 750 "$REDIS_PID_DIR"
     chmod 750 "$REDIS_CONF_DIR"
-    chmod 640 "$REDIS_CONF_DIR/redis.conf"
     
     print_success "用户和权限配置完成"
 }
@@ -1638,10 +1654,17 @@ After=network.target
 Type=forking
 User=${REDIS_USER}
 Group=${REDIS_GROUP}
+RuntimeDirectory=redis
+RuntimeDirectoryMode=0755
 PIDFile=${REDIS_PID_DIR}/redis.pid
+
+# 启动和停止命令
 ExecStart=${REDIS_INSTALL_DIR}/bin/redis-server ${REDIS_CONF_DIR}/redis.conf
 ExecStop=${REDIS_INSTALL_DIR}/bin/redis-cli -a ${REDIS_PASSWORD} shutdown
-Restart=always
+
+# 重启设置
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -1654,7 +1677,23 @@ EOF
     systemctl enable redis
     
     print_step "启动 Redis 服务..."
-    systemctl start redis
+    if ! systemctl start redis; then
+        print_error "Redis 服务启动失败"
+        
+        print_info "===== 服务状态 ====="
+        systemctl status redis 2>&1
+        
+        print_info "===== 系统日志 ====="
+        journalctl -xe --unit=redis 2>&1
+        
+        print_info "===== Redis 日志 ====="
+        tail -n 50 "${REDIS_LOG_DIR}/redis.log" 2>&1
+        
+        exit 1
+    fi
+    
+    # 等待服务完全启动
+    sleep 2
     
     print_success "系统服务配置完成"
 }
@@ -1669,7 +1708,8 @@ redis_install_verify() {
     fi
     
     print_step "检查 Redis 连接..."
-    if ! "$REDIS_INSTALL_DIR/bin/redis-cli" -a "$REDIS_PASSWORD" ping | grep -q "PONG"; then
+    # 直接使用 -a 参数，忽略警告信息
+    if ! "$REDIS_INSTALL_DIR/bin/redis-cli" -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
         print_error "Redis 连接测试失败"
         exit 1
     fi
@@ -1697,14 +1737,19 @@ redis_install() {
     print_debug "开始 Redis 安装流程"
     start_time=$(date +%s)
     
+    # 先执行卸载操作，传入静默参数
+    print_step "执行清理操作..."
+    redis_uninstall true >/dev/null 2>&1 || true
+    
+    # 继续安装流程
     redis_common_check_dependencies
     redis_install_cleanup_previous
-    redis_install_prepare_directories  # 新增：准备目录结构
+    redis_install_prepare_directories
     redis_install_download_package
     redis_install_compile
     redis_install_configure
     redis_install_create_user
-    redis_install_configure_env    # 新增：配置环境变量
+    redis_install_configure_env
     redis_install_setup_service
     redis_install_verify
     redis_install_finish
@@ -1742,6 +1787,9 @@ redis_uninstall_stop_service() {
 redis_uninstall_remove_files() {
     print_section "删除 Redis 文件"
     
+    # 获取静默模式参数
+    local is_silent=${1:-false}
+    
     # 删除标准目录结构
     local dirs=(
         "$REDIS_INSTALL_DIR"
@@ -1759,13 +1807,18 @@ redis_uninstall_remove_files() {
     
     # 数据和日志目录需要确认
     if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ] || [ -d "$REDIS_PID_DIR" ]; then
-        print_warning "检测到数据、日志或PID目录"
-        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除这些目录？(y/n): " remove_data
-        if [ "$remove_data" = "y" ] || [ "$remove_data" = "Y" ]; then
+        if [ "$is_silent" = "true" ]; then
+            # 静默模式下直接删除
             rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR"
-            print_success "数据、日志和PID目录已删除"
         else
-            print_info "保留数据、日志和PID目录"
+            print_warning "检测到数据、日志或PID目录"
+            read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除这些目录？(y/n): " remove_data
+            if [ "$remove_data" = "y" ] || [ "$remove_data" = "Y" ]; then
+                rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR"
+                print_success "数据、日志和PID目录已删除"
+            else
+                print_info "保留数据、日志和PID目录"
+            fi
         fi
     fi
 }
@@ -1813,18 +1866,23 @@ redis_uninstall_finish() {
 redis_uninstall() {
     print_section "卸载 Redis"
     
-    print_warning "此操作将完全删除 Redis 及其配置"
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
+    # 如果是通过安装函数调用的，则静默执行
+    local is_silent=${1:-false}
     
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        print_info "取消卸载"
-        return 0
+    if [ "$is_silent" = "false" ]; then
+        print_warning "此操作将完全删除 Redis 及其配置"
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
+        
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            print_info "取消卸载"
+            return 0
+        fi
     fi
     
     redis_common_check_processes
     redis_uninstall_stop_service
-    redis_uninstall_remove_files
-    redis_uninstall_remove_env_files  # 确保这个函数在这里调用
+    redis_uninstall_remove_files "$is_silent"  # 传递静默参数
+    redis_uninstall_remove_env_files
     redis_uninstall_remove_user
     redis_uninstall_finish
 }
