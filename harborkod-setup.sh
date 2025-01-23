@@ -1531,21 +1531,21 @@ redis_install_configure() {
     cat > "${REDIS_CONF_DIR}/redis.conf" <<EOF
 # 基本配置
 daemonize yes
-pidfile "${REDIS_PID_DIR}/redis.pid"
+pidfile /run/redis/redis.pid
 port 6379
 bind 0.0.0.0
 timeout 0
 
 # 日志配置
 loglevel notice
-logfile "${REDIS_LOG_DIR}/redis.log"
+logfile ${REDIS_LOG_DIR}/redis.log
 
 # 数据目录配置
-dir "${REDIS_DATA_DIR}"
+dir ${REDIS_DATA_DIR}
 dbfilename dump.rdb
 
 # 认证配置
-requirepass "${REDIS_PASSWORD}"
+requirepass ${REDIS_PASSWORD}
 
 # 数据库配置
 databases 16
@@ -1656,10 +1656,20 @@ User=${REDIS_USER}
 Group=${REDIS_GROUP}
 RuntimeDirectory=redis
 RuntimeDirectoryMode=0755
-PIDFile=${REDIS_PID_DIR}/redis.pid
+PIDFile=/run/redis/redis.pid
 
-# 启动和停止命令
+# ExecStartPre: 在启动服务之前执行的命令
+ExecStartPre=/bin/mkdir -p /run/redis
+ExecStartPre=/bin/chown ${REDIS_USER}:${REDIS_GROUP} /run/redis
+ExecStartPre=/bin/chmod 0755 /run/redis
+
+# ExecStart: 启动服务的主命令
 ExecStart=${REDIS_INSTALL_DIR}/bin/redis-server ${REDIS_CONF_DIR}/redis.conf
+
+# ExecStartPost: 在服务启动之后执行的命令，这里用于等待 PID 文件创建
+ExecStartPost=/bin/sh -c 'while ! test -f /run/redis/redis.pid; do sleep 0.1; done'
+
+# ExecStop: 停止服务的命令
 ExecStop=${REDIS_INSTALL_DIR}/bin/redis-cli -a ${REDIS_PASSWORD} shutdown
 
 # 重启设置
