@@ -6,7 +6,30 @@
 # 版本: 1.0.0
 # ==============================================
 
-# 全局配置
+# 命名规范说明
+# ==============================================
+# 1. 通用函数命名规范：
+#    - 日志和输出相关函数：print_xxx
+#    - 菜单管理相关函数：manage_xxx, select_xxx
+#
+# 2. 软件相关函数命名规范：
+#    - 通用函数：{软件前缀}_common_xxx
+#      例如：jdk_common_cleanup_path, jdk_common_check_dependencies
+#
+#    - 安装相关函数：{软件前缀}_install_xxx
+#      例如：jdk_install_download_package, jdk_install_configure_env
+#
+#    - 卸载相关函数：{软件前缀}_uninstall_xxx
+#      例如：jdk_uninstall_remove_env_files, jdk_uninstall_cleanup_env_vars
+#
+# 3. 软件前缀说明：
+#    - JDK 相关：jdk_
+#    - Maven 相关：mvn_
+#    - MySQL 相关：mysql_
+# ==============================================
+
+
+# 1. 全局配置和变量
 # ==============================================
 # 是否开启调试模式 (true/false)
 ENABLE_DEBUG=false
@@ -18,6 +41,52 @@ LOG_WARN="WARN"
 LOG_ERROR="ERROR"
 LOG_SUCCESS="SUCCESS"
 
+# 颜色代码
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+BOLD='\033[1m'
+
+# 通用目录配置
+DOWNLOAD_BASE_DIR="/opt"
+
+# JDK 相关变量
+JDK_VERSION="8u421"
+JDK_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/java/jdk-8u421-linux-x64.tar.gz"
+JDK_INSTALL_DIR="/usr/local/jdk-${JDK_VERSION}"
+
+# Maven 相关变量
+MVN_VERSION="3.8.7"
+MVN_USER="maven"
+MVN_GROUP="maven"
+MVN_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/maven/apache-maven-${MVN_VERSION}-bin.tar.gz"
+MVN_INSTALL_DIR="/usr/local/apache-maven-${MVN_VERSION}"
+MVN_LOCAL_REPO="/repo"
+
+
+
+# Redis 相关变量
+REDIS_VERSION="6.2.9"
+REDIS_USER="redis"
+REDIS_GROUP="redis"
+REDIS_PASSWORD="harborKod@redis@admin"
+REDIS_SOURCE_URL="https://mirrors.huaweicloud.com/redis/redis-${REDIS_VERSION}.tar.gz"
+
+# 标准目录结构
+REDIS_INSTALL_DIR="/usr/local/redis"                # 程序安装目录
+REDIS_CONF_DIR="/etc/redis"                        # 配置文件目录
+REDIS_LOG_DIR="/var/log/redis"                     # 日志目录
+REDIS_DATA_DIR="/var/lib/redis"                    # 数据目录
+REDIS_PID_DIR="/var/run/redis"                     # PID 文件目录
+REDIS_SRC_DIR="/usr/local/src/redis-${REDIS_VERSION}"  # 源码目录
+
+
+
+# 全局配置
+# ==============================================
 # 日志输出函数
 print_log() {
     local level="$1"
@@ -86,38 +155,6 @@ if [ "$ENABLE_DEBUG" = "true" ]; then
     print_debug "当前目录: $(pwd)"
 fi
 
-# 命名规范说明
-# ==============================================
-# 1. 通用函数命名规范：
-#    - 日志和输出相关函数：print_xxx
-#    - 菜单管理相关函数：manage_xxx, select_xxx
-#
-# 2. 软件相关函数命名规范：
-#    - 通用函数：{软件前缀}_common_xxx
-#      例如：jdk_common_cleanup_path, jdk_common_check_dependencies
-#
-#    - 安装相关函数：{软件前缀}_install_xxx
-#      例如：jdk_install_download_package, jdk_install_configure_env
-#
-#    - 卸载相关函数：{软件前缀}_uninstall_xxx
-#      例如：jdk_uninstall_remove_env_files, jdk_uninstall_cleanup_env_vars
-#
-# 3. 软件前缀说明：
-#    - JDK 相关：jdk_
-#    - Maven 相关：mvn_
-#    - MySQL 相关：mysql_
-# ==============================================
-
-# 1. 通用配置和变量
-# ======================
-# 颜色代码
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-BOLD='\033[1m'
 
 # 2. 通用函数
 # ======================
@@ -169,6 +206,9 @@ print_section() {
     print_info "$(printf "%*s%s%*s" $padding "" "$title" $((padding + extra_space)) "")"
     print_info "└──────────────────────────────────────────────────────────┘"
 }
+
+
+
 
 # 3. JDK 相关函数
 # ======================
@@ -311,22 +351,22 @@ jdk_install_select_version() {
     read -r name jdk_version download_url <<< "$selected"
     
     # 设置安装目录
-    install_dir="/usr/local/$jdk_version"
+    JDK_INSTALL_DIR="/usr/local/$jdk_version"
 
     # 添加调试信息
     print_debug "选择的版本信息: $selected"
     print_debug "名称: $name"
     print_debug "解析后的版本: $jdk_version"
     print_debug "解析后的下载URL: $download_url"
-    print_debug "解析后的安装目录: $install_dir"
+    print_debug "解析后的安装目录: $JDK_INSTALL_DIR"
 
     print_success "已选择: $jdk_version"
 }
 
 jdk_install_cleanup_previous() {
     print_section "清理历史数据"
-    download_dir="/opt"
-    jdk_package="$download_dir/$(basename $download_url)"
+    DOWNLOAD_BASE_DIR="/opt"
+    jdk_package="$DOWNLOAD_BASE_DIR/$(basename $download_url)"
 
     if [ -f "$jdk_package" ]; then
         print_step "清理已有安装包: $jdk_package"
@@ -334,9 +374,9 @@ jdk_install_cleanup_previous() {
         print_success "安装包清理完成"
     fi
 
-    if [ -d "$install_dir" ]; then
-        print_step "清理已有安装目录: $install_dir"
-        rm -rf "$install_dir"
+    if [ -d "$JDK_INSTALL_DIR" ]; then
+        print_step "清理已有安装目录: $JDK_INSTALL_DIR"
+        rm -rf "$JDK_INSTALL_DIR"
         print_success "安装目录清理完成"
     fi
 
@@ -361,15 +401,15 @@ jdk_cleanup_alternatives() {
         return
     fi
 
-    if [ -x "$install_dir/bin/java" ]; then
+    if [ -x "$JDK_INSTALL_DIR/bin/java" ]; then
         print_step "移除 java alternatives 配置"
-        sudo $ALTERNATIVES_CMD --remove java "$install_dir/bin/java"
+        sudo $ALTERNATIVES_CMD --remove java "$JDK_INSTALL_DIR/bin/java"
         print_success "Java alternatives 已清理"
     fi
 
-    if [ -x "$install_dir/bin/javac" ]; then
+    if [ -x "$JDK_INSTALL_DIR/bin/javac" ]; then
         print_step "移除 javac alternatives 配置"
-        sudo $ALTERNATIVES_CMD --remove javac "$install_dir/bin/javac"
+        sudo $ALTERNATIVES_CMD --remove javac "$JDK_INSTALL_DIR/bin/javac"
         print_success "Javac alternatives 已清理"
     fi
 }
@@ -379,22 +419,22 @@ jdk_install_download_package() {
     
     # 打印调试信息
     print_debug "当前函数: ${FUNCNAME[0]}"
-    print_debug "下载目录: $download_dir"
+    print_debug "下载目录: $DOWNLOAD_BASE_DIR"
     print_debug "JDK 版本: $jdk_version"
     print_debug "下载 URL: $download_url"
     print_debug "安装包路径: $jdk_package"
-    print_debug "安装目录: $install_dir"
+    print_debug "安装目录: $JDK_INSTALL_DIR"
 
     # 先确保 jdk_package 变量已正确设置
     if [ -z "$jdk_package" ]; then
-        jdk_package="$download_dir/$(basename "$download_url")"
+        jdk_package="$DOWNLOAD_BASE_DIR/$(basename "$download_url")"
     fi
     print_step "下载文件将保存为: $jdk_package"
 
     # 检查下载目录
-    if [ ! -d "$download_dir" ]; then
-        print_step "创建下载目录: $download_dir"
-        if ! mkdir -p "$download_dir"; then
+    if [ ! -d "$DOWNLOAD_BASE_DIR" ]; then
+        print_step "创建下载目录: $DOWNLOAD_BASE_DIR"
+        if ! mkdir -p "$DOWNLOAD_BASE_DIR"; then
             print_error "创建下载目录失败"
             exit 1
         fi
@@ -441,7 +481,7 @@ jdk_install_download_package() {
             print_error "下载失败，请检查以下内容："
             print_info "1. 网络连接是否正常"
             print_info "2. 下载地址是否可访问: $download_url"
-            print_info "3. 是否有足够的磁盘空间: $(df -h $download_dir)"
+            print_info "3. 是否有足够的磁盘空间: $(df -h $DOWNLOAD_BASE_DIR)"
             exit 1
         fi
     done
@@ -466,17 +506,17 @@ jdk_install_prepare_directory() {
     print_section "准备安装目录"
     
     required_space=500000
-    available_space=$(df "$download_dir" | tail -1 | awk '{print $4}')
+    available_space=$(df "$DOWNLOAD_BASE_DIR" | tail -1 | awk '{print $4}')
     if [ "$available_space" -lt "$required_space" ]; then
         print_error "磁盘空间不足，需要至少 500MB 可用空间"
         exit 1
     fi
 
-    if ! mkdir -p "$install_dir"; then
+    if ! mkdir -p "$JDK_INSTALL_DIR"; then
         print_error "创建安装目录失败，请检查权限"
         exit 1
     fi
-    print_success "安装目录准备完成: $install_dir"
+    print_success "安装目录准备完成: $JDK_INSTALL_DIR"
 }
 
 jdk_install_extract_package() {
@@ -485,19 +525,19 @@ jdk_install_extract_package() {
     
     case "$jdk_package" in
         *.tar.gz|*.tgz)
-            if ! tar -xzf "$jdk_package" -C "$install_dir" --strip-components=1; then
+            if ! tar -xzf "$jdk_package" -C "$JDK_INSTALL_DIR" --strip-components=1; then
                 print_error "解压失败"
                 exit 1
             fi
             ;;
         *.tar)
-            if ! tar -xf "$jdk_package" -C "$install_dir" --strip-components=1; then
+            if ! tar -xf "$jdk_package" -C "$JDK_INSTALL_DIR" --strip-components=1; then
                 print_error "解压失败"
                 exit 1
             fi
             ;;
         *.zip)
-            if ! unzip -q "$jdk_package" -d "$install_dir"; then
+            if ! unzip -q "$jdk_package" -d "$JDK_INSTALL_DIR"; then
                 print_error "解压失败"
                 exit 1
             fi
@@ -508,12 +548,12 @@ jdk_install_extract_package() {
             ;;
     esac
 
-    if [ ! -d "$install_dir/bin" ]; then
+    if [ ! -d "$JDK_INSTALL_DIR/bin" ]; then
         print_error "解压后未找到预期的目录结构"
         exit 1
     fi
     
-    print_success "解压完成: $install_dir"
+    print_success "解压完成: $JDK_INSTALL_DIR"
 }
 
 jdk_install_configure_env() {
@@ -524,7 +564,7 @@ jdk_install_configure_env() {
     
     cat <<EOF | sudo tee "$env_file" >/dev/null
 # Java 环境变量 - $jdk_version
-export JAVA_HOME=$install_dir
+export JAVA_HOME=$JDK_INSTALL_DIR
 
 # 确保 PATH 中不会重复添加 JAVA_HOME/bin
 if [[ ":\$PATH:" != *":\$JAVA_HOME/bin:"* ]]; then
@@ -555,8 +595,8 @@ jdk_install_set_default() {
     fi
 
     # 检查 Java 可执行文件
-    if [ ! -x "$install_dir/bin/java" ]; then
-        print_error "Java 可执行文件不存在: $install_dir/bin/java"
+    if [ ! -x "$JDK_INSTALL_DIR/bin/java" ]; then
+        print_error "Java 可执行文件不存在: $JDK_INSTALL_DIR/bin/java"
         exit 1
     fi
 
@@ -576,25 +616,25 @@ jdk_install_set_default() {
     
     # 添加新的配置
     print_step "添加新的 alternatives 配置..."
-    sudo $ALTERNATIVES_CMD --install /usr/bin/java java "$install_dir/bin/java" 2000 \
-        --slave /usr/bin/javac javac "$install_dir/bin/javac" \
-        --slave /usr/bin/jar jar "$install_dir/bin/jar" \
-        --slave /usr/bin/jps jps "$install_dir/bin/jps"
+    sudo $ALTERNATIVES_CMD --install /usr/bin/java java "$JDK_INSTALL_DIR/bin/java" 2000 \
+        --slave /usr/bin/javac javac "$JDK_INSTALL_DIR/bin/javac" \
+        --slave /usr/bin/jar jar "$JDK_INSTALL_DIR/bin/jar" \
+        --slave /usr/bin/jps jps "$JDK_INSTALL_DIR/bin/jps"
     
     # 设置为默认版本
     print_step "设置为默认版本..."
-    sudo $ALTERNATIVES_CMD --set java "$install_dir/bin/java"
+    sudo $ALTERNATIVES_CMD --set java "$JDK_INSTALL_DIR/bin/java"
     
     # 验证设置
     current_java=$($ALTERNATIVES_CMD --display java | grep "link currently points to" | awk '{print $NF}')
     
-    if [ "$current_java" = "$install_dir/bin/java" ]; then
+    if [ "$current_java" = "$JDK_INSTALL_DIR/bin/java" ]; then
         print_success "已成功设置 $jdk_version 为默认版本"
     else
         print_warning "alternatives 配置可能未完全生效"
         print_step "创建直接链接..."
-        sudo ln -sf "$install_dir/bin/java" /usr/bin/java
-        sudo ln -sf "$install_dir/bin/javac" /usr/bin/javac
+        sudo ln -sf "$JDK_INSTALL_DIR/bin/java" /usr/bin/java
+        sudo ln -sf "$JDK_INSTALL_DIR/bin/javac" /usr/bin/javac
     fi
 }
 
@@ -624,7 +664,7 @@ jdk_install_finish() {
     print_success "Java 安装成功"
     print_info "安装用时: ${execution_time} 秒"
     print_info "Java 版本: $($JAVA_HOME/bin/java -version 2>&1 | head -n 1)"
-    print_info "安装路径: $install_dir"
+    print_info "安装路径: $JDK_INSTALL_DIR"
     print_warning "请执行以下命令使环境变量生效:"
     print_info "source /etc/profile.d/java_${jdk_version}.sh"
 }
@@ -790,6 +830,9 @@ jdk_uninstall() {
     print_info "卸载完成"
 }
 
+
+
+
 # 4. Maven 相关函数
 # ======================
 
@@ -888,17 +931,17 @@ mvn_install_select_version() {
     # 由于只有一个版本，可以简化为：
     mvn_version="apache-maven-3.8.7"
     download_url="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/maven/apache-maven-3.8.7-bin.tar.gz"
-    install_dir="/usr/local/$mvn_version"
+    MVN_INSTALL_DIR="/usr/local/$mvn_version"
     
     print_info "将安装: Apache Maven 3.8.7"
-    print_debug "安装目录: $install_dir"
+    print_debug "安装目录: $MVN_INSTALL_DIR"
     print_debug "下载地址: $download_url"
 }
 
 mvn_install_cleanup_previous() {
     print_section "清理历史数据"
-    download_dir="/opt"
-    mvn_package="$download_dir/$(basename $download_url)"
+    DOWNLOAD_BASE_DIR="/opt"
+    mvn_package="$DOWNLOAD_BASE_DIR/$(basename $download_url)"
 
     if [ -f "$mvn_package" ]; then
         print_step "清理已有安装包: $mvn_package"
@@ -906,9 +949,9 @@ mvn_install_cleanup_previous() {
         print_success "安装包清理完成"
     fi
 
-    if [ -d "$install_dir" ]; then
-        print_step "清理已有安装目录: $install_dir"
-        rm -rf "$install_dir"
+    if [ -d "$MVN_INSTALL_DIR" ]; then
+        print_step "清理已有安装目录: $MVN_INSTALL_DIR"
+        rm -rf "$MVN_INSTALL_DIR"
         print_success "安装目录清理完成"
     fi
 
@@ -925,22 +968,22 @@ mvn_install_download_package() {
     
     # 打印调试信息
     print_debug "当前函数: ${FUNCNAME[0]}"
-    print_debug "下载目录: $download_dir"
+    print_debug "下载目录: $DOWNLOAD_BASE_DIR"
     print_debug "Maven 版本: $mvn_version"
     print_debug "下载 URL: $download_url"
     print_debug "安装包路径: $mvn_package"
-    print_debug "安装目录: $install_dir"
+    print_debug "安装目录: $MVN_INSTALL_DIR"
 
     # 先确保 mvn_package 变量已正确设置
     if [ -z "$mvn_package" ]; then
-        mvn_package="$download_dir/$(basename "$download_url")"
+        mvn_package="$DOWNLOAD_BASE_DIR/$(basename "$download_url")"
     fi
     print_step "下载文件将保存为: $mvn_package"
 
     # 检查下载目录
-    if [ ! -d "$download_dir" ]; then
-        print_step "创建下载目录: $download_dir"
-        if ! mkdir -p "$download_dir"; then
+    if [ ! -d "$DOWNLOAD_BASE_DIR" ]; then
+        print_step "创建下载目录: $DOWNLOAD_BASE_DIR"
+        if ! mkdir -p "$DOWNLOAD_BASE_DIR"; then
             print_error "创建下载目录失败"
             exit 1
         fi
@@ -987,7 +1030,7 @@ mvn_install_download_package() {
             print_error "下载失败，请检查以下内容："
             print_info "1. 网络连接是否正常"
             print_info "2. 下载地址是否可访问: $download_url"
-            print_info "3. 是否有足够的磁盘空间: $(df -h $download_dir)"
+            print_info "3. 是否有足够的磁盘空间: $(df -h $DOWNLOAD_BASE_DIR)"
             exit 1
         fi
     done
@@ -1021,34 +1064,34 @@ mvn_install_prepare_directory() {
     print_section "准备安装目录"
     
     required_space=50000  # Maven 需要的空间比 JDK 小
-    available_space=$(df "$download_dir" | tail -1 | awk '{print $4}')
+    available_space=$(df "$DOWNLOAD_BASE_DIR" | tail -1 | awk '{print $4}')
     if [ "$available_space" -lt "$required_space" ]; then
         print_error "磁盘空间不足，需要至少 50MB 可用空间"
         exit 1
     fi
 
-    if ! mkdir -p "$install_dir"; then
+    if ! mkdir -p "$MVN_INSTALL_DIR"; then
         print_error "创建安装目录失败，请检查权限"
         exit 1
     fi
-    print_success "安装目录准备完成: $install_dir"
+    print_success "安装目录准备完成: $MVN_INSTALL_DIR"
 }
 
 mvn_install_extract_package() {
     print_section "解压 Maven 安装包"
     print_step "正在解压: $mvn_package"
     
-    if ! tar -xzf "$mvn_package" -C "$install_dir" --strip-components=1; then
+    if ! tar -xzf "$mvn_package" -C "$MVN_INSTALL_DIR" --strip-components=1; then
         print_error "解压失败"
         exit 1
     fi
 
-    if [ ! -d "$install_dir/bin" ]; then
+    if [ ! -d "$MVN_INSTALL_DIR/bin" ]; then
         print_error "解压后未找到预期的目录结构"
         exit 1
     fi
     
-    print_success "解压完成: $install_dir"
+    print_success "解压完成: $MVN_INSTALL_DIR"
 }
 
 mvn_install_modify_settings() {
@@ -1072,7 +1115,7 @@ mvn_install_modify_settings() {
     fi
 
     # 备份原始配置文件
-    local settings_file="$install_dir/conf/settings.xml"
+    local settings_file="$MVN_INSTALL_DIR/conf/settings.xml"
     print_step "备份原始配置..."
     cp "$settings_file" "$settings_file.bak"
     print_success "已备份配置文件到: $settings_file.bak"
@@ -1144,11 +1187,11 @@ mvn_install_create_user() {
 
     # 更新权限
     print_step "更新目录权限..."
-    if [ -d "$install_dir" ]; then
-        chown -R "$maven_user:$maven_group" "$install_dir"
-        print_success "已更新安装目录权限: $install_dir"
+    if [ -d "$MVN_INSTALL_DIR" ]; then
+        chown -R "$maven_user:$maven_group" "$MVN_INSTALL_DIR"
+        print_success "已更新安装目录权限: $MVN_INSTALL_DIR"
     else
-        print_warning "安装目录不存在: $install_dir"
+        print_warning "安装目录不存在: $MVN_INSTALL_DIR"
     fi
 
     if [ -d "/repo" ]; then
@@ -1172,8 +1215,8 @@ mvn_install_configure_env() {
     # 检查环境变量文件是否存在
     if [ -f "$env_file" ]; then
         print_step "检查现有环境变量配置..."
-        if grep -q "MAVEN_HOME=$install_dir" "$env_file" && \
-           grep -q "M2_HOME=$install_dir" "$env_file"; then
+        if grep -q "MAVEN_HOME=$MVN_INSTALL_DIR" "$env_file" && \
+           grep -q "M2_HOME=$MVN_INSTALL_DIR" "$env_file"; then
             print_info "Maven 环境变量已正确配置，无需更改"
             return 0
         else
@@ -1185,8 +1228,8 @@ mvn_install_configure_env() {
     # 创建新的环境变量配置
     cat <<EOF > "$env_file"
 # Maven 环境变量配置
-export MAVEN_HOME=$install_dir
-export M2_HOME=$install_dir
+export MAVEN_HOME=$MVN_INSTALL_DIR
+export M2_HOME=$MVN_INSTALL_DIR
 
 # 确保 PATH 中不会重复添加 Maven 路径
 if [[ ":\$PATH:" != *":\$MAVEN_HOME/bin:"* ]]; then
@@ -1229,7 +1272,7 @@ mvn_install_finish() {
     print_success "Maven 安装成功"
     print_info "安装用时: ${execution_time} 秒"
     print_info "Maven 版本: $($MAVEN_HOME/bin/mvn -version | head -n 1)"
-    print_info "安装路径: $install_dir"
+    print_info "安装路径: $MVN_INSTALL_DIR"
     print_warning "请执行以下命令使环境变量生效:"
     print_info "source /etc/profile.d/maven_${mvn_version}.sh"
 }
@@ -1244,7 +1287,6 @@ mvn_install() {
 
     start_time=$(date +%s)
     
-    # 按照原有 maven.sh 的流程顺序
     mvn_common_cleanup_path
     mvn_common_check_dependencies
     mvn_install_check_existing
@@ -1253,9 +1295,9 @@ mvn_install() {
     mvn_install_download_package
     mvn_install_prepare_directory
     mvn_install_extract_package
-    mvn_install_modify_settings    # 新增：修改 settings.xml 配置
+    mvn_install_modify_settings    
     mvn_install_configure_env
-    mvn_install_create_user       # 新增：创建用户和权限
+    mvn_install_create_user      
     mvn_install_verify
     mvn_install_finish
 }
@@ -1332,11 +1374,11 @@ mvn_uninstall() {
     mvn_common_check_processes
     
     # 清理本地仓库
-    if [ -d "$LOCAL_REPO" ]; then
-        print_warning "检测到 Maven 本地仓库: $LOCAL_REPO"
+    if [ -d "$MVN_LOCAL_REPO" ]; then
+        print_warning "检测到 Maven 本地仓库: $MVN_LOCAL_REPO"
         read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除本地仓库？(y/n): " remove_repo
         if [ "$remove_repo" = "y" ] || [ "$remove_repo" = "Y" ]; then
-            rm -rf "$LOCAL_REPO"
+            rm -rf "$MVN_LOCAL_REPO"
             print_success "已删除本地仓库"
         else
             print_info "保留本地仓库"
@@ -1351,7 +1393,464 @@ mvn_uninstall() {
     mvn_uninstall_finish
 }
 
-# 5. MySQL 相关函数
+
+
+
+# 5. Redis 相关函数
+# ======================
+
+# Redis 通用函数
+redis_common_check_dependencies() {
+    print_section "检查 Redis 安装依赖"
+    
+    # 检查 root 权限
+    if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
+        print_error "此脚本需要 root 权限或 sudo 命令"
+        exit 1
+    fi
+
+    # 检查必要的命令
+    for cmd in wget tar gcc make; do
+        if ! command -v $cmd >/dev/null 2>&1; then
+            print_warning "未检测到 $cmd 命令，正在安装..."
+            if command -v yum >/dev/null 2>&1; then
+                sudo yum install -y $cmd
+            elif command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get install -y $cmd
+            else
+                print_error "无法自动安装 $cmd，请手动安装"
+                exit 1
+            fi
+            print_success "$cmd 安装完成"
+        else
+            print_success "$cmd 已安装"
+        fi
+    done
+}
+
+redis_common_check_processes() {
+    print_section "检查 Redis 进程"
+    print_step "检查是否有正在运行的 Redis 进程..."
+    
+    # 检查端口 6379 是否被占用
+    local pid=$(lsof -t -i:6379)
+    if [ -n "$pid" ]; then
+        print_warning "检测到占用 6379 端口的进程 (PID: $pid)"
+        kill -9 $pid
+        print_success "已终止占用 6379 端口的进程"
+    fi
+
+    # 检查 redis-server 进程
+    if pgrep -x "redis-server" > /dev/null; then
+        print_warning "检测到正在运行的 Redis 进程"
+        pkill redis-server
+        print_success "Redis 进程已终止"
+    else
+        print_info "未检测到运行中的 Redis 进程"
+    fi
+}
+
+# Redis 安装相关函数
+redis_install_cleanup_previous() {
+    print_section "清理历史数据"
+    
+    # 检查并终止 Redis 进程
+    redis_common_check_processes
+    
+    # 删除旧的安装目录
+    if [ -d "$REDIS_INSTALL_DIR" ]; then
+        print_step "删除旧的 Redis 安装目录..."
+        rm -rf "$REDIS_INSTALL_DIR"
+        print_success "已删除安装目录"
+    fi
+
+    # 删除旧的源代码目录
+    if [ -d "$REDIS_SRC_DIR" ]; then
+        print_step "删除旧的 Redis 源代码目录..."
+        rm -rf "$REDIS_SRC_DIR"
+        print_success "已删除源代码目录"
+    fi
+
+    # 删除旧的配置文件
+    if [ -f "/etc/redis.conf" ]; then
+        print_step "备份旧的配置文件..."
+        mv /etc/redis.conf "/etc/redis.conf.bak_$(date +%F_%T)"
+        print_success "已备份配置文件"
+    fi
+}
+
+redis_install_download_package() {
+    print_section "下载 Redis 源码"
+    cd "$DOWNLOAD_BASE_DIR"
+    
+    local package_name="redis-${REDIS_VERSION}.tar.gz"
+    if [ -f "$package_name" ]; then
+        print_info "Redis 源码包已存在，跳过下载"
+    else
+        print_step "下载 Redis 源码包..."
+        if ! wget -O "$package_name" "$REDIS_SOURCE_URL"; then
+            print_error "下载 Redis 源码包失败"
+            exit 1
+        fi
+        print_success "下载完成"
+    fi
+
+    print_step "解压源码包..."
+    tar -zxf "$package_name" -C /usr/local/
+    mv "/usr/local/redis-${REDIS_VERSION}" "$REDIS_SRC_DIR"
+    print_success "解压完成"
+}
+
+redis_install_compile() {
+    print_section "编译 Redis"
+    cd "$REDIS_SRC_DIR"
+    
+    print_step "开始编译..."
+    if ! make -j$(nproc); then
+        print_error "编译失败"
+        exit 1
+    fi
+    
+    print_step "安装到指定目录..."
+    if ! make install PREFIX="$REDIS_INSTALL_DIR"; then
+        print_error "安装失败"
+        exit 1
+    fi
+    
+    print_success "编译安装完成"
+}
+
+redis_install_configure() {
+    print_section "配置 Redis"
+    
+    # 创建必要的目录
+    print_step "创建标准目录结构..."
+    mkdir -p "$REDIS_CONF_DIR" "$REDIS_LOG_DIR" "$REDIS_DATA_DIR" "$REDIS_PID_DIR"
+    
+    # 创建配置文件
+    print_step "创建配置文件..."
+    cat > "${REDIS_CONF_DIR}/redis.conf" <<EOF
+# 网络配置
+bind 0.0.0.0
+port 6379
+requirepass ${REDIS_PASSWORD}
+
+# 日志配置
+loglevel notice
+logfile "${REDIS_LOG_DIR}/redis.log"
+pidfile "${REDIS_PID_DIR}/redis.pid"
+databases 16
+
+# 持久化配置
+save 900 1
+save 300 10
+save 60 10000
+dbfilename dump.rdb
+dir ${REDIS_DATA_DIR}
+
+# AOF 配置
+appendonly yes
+appendfilename "appendonly.aof"
+appendfsync everysec
+
+# 其他配置
+maxclients 100
+timeout 300
+protected-mode no
+daemonize yes
+EOF
+
+    print_success "配置文件创建完成"
+}
+
+redis_install_create_user() {
+    print_section "创建用户和权限"
+    
+    # 创建用户组和用户
+    if ! getent group "$REDIS_GROUP" > /dev/null; then
+        print_step "创建用户组..."
+        groupadd "$REDIS_GROUP"
+        print_success "用户组创建完成"
+    fi
+
+    if ! id "$REDIS_USER" > /dev/null 2>&1; then
+        print_step "创建用户..."
+        useradd -r -g "$REDIS_GROUP" -d "$REDIS_DATA_DIR" -s /usr/sbin/nologin "$REDIS_USER"
+        print_success "用户创建完成"
+    fi
+
+    # 设置目录权限
+    print_step "设置目录权限..."
+    chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_INSTALL_DIR"
+    chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_DATA_DIR"
+    chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_LOG_DIR"
+    chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_PID_DIR"
+    chown -R root:$REDIS_GROUP "$REDIS_CONF_DIR"
+    
+    # 设置权限
+    chmod 755 "$REDIS_INSTALL_DIR"
+    chmod 750 "$REDIS_DATA_DIR"
+    chmod 750 "$REDIS_LOG_DIR"
+    chmod 750 "$REDIS_PID_DIR"
+    chmod 750 "$REDIS_CONF_DIR"
+    chmod 640 "$REDIS_CONF_DIR/redis.conf"
+    
+    print_success "用户和权限配置完成"
+}
+
+redis_install_configure_env() {
+    print_section "配置环境变量"
+    
+    env_file="/etc/profile.d/redis.sh"
+    print_step "创建环境变量配置文件..."
+    
+    cat > "$env_file" <<EOF
+# Redis 环境变量配置
+export REDIS_HOME=${REDIS_INSTALL_DIR}
+
+# 确保 PATH 中不会重复添加 Redis 路径
+if [[ ":\$PATH:" != *":\$REDIS_HOME/bin:"* ]]; then
+    export PATH=\$PATH:\$REDIS_HOME/bin
+fi
+EOF
+
+    if [ $? -eq 0 ]; then
+        print_success "Redis 环境变量已设置"
+        # 刷新当前会话的环境变量
+        source "$env_file"
+        print_success "环境变量已刷新"
+    else
+        print_error "环境变量配置失败"
+        exit 1
+    fi
+}
+
+redis_install_setup_service() {
+    print_section "配置系统服务"
+    
+    print_step "创建 systemd 服务文件..."
+    cat > /etc/systemd/system/redis.service <<EOF
+[Unit]
+Description=Redis In-Memory Data Store
+After=network.target
+
+[Service]
+Type=forking
+User=${REDIS_USER}
+Group=${REDIS_GROUP}
+PIDFile=${REDIS_PID_DIR}/redis.pid
+ExecStart=${REDIS_INSTALL_DIR}/bin/redis-server ${REDIS_CONF_DIR}/redis.conf
+ExecStop=${REDIS_INSTALL_DIR}/bin/redis-cli -a ${REDIS_PASSWORD} shutdown
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    print_step "重载 systemd 配置..."
+    systemctl daemon-reload
+    
+    print_step "启用 Redis 服务..."
+    systemctl enable redis
+    
+    print_step "启动 Redis 服务..."
+    systemctl start redis
+    
+    print_success "系统服务配置完成"
+}
+
+redis_install_verify() {
+    print_section "验证安装结果"
+    
+    print_step "检查 Redis 服务状态..."
+    if ! systemctl is-active redis >/dev/null 2>&1; then
+        print_error "Redis 服务未能正常启动"
+        exit 1
+    fi
+    
+    print_step "检查 Redis 连接..."
+    if ! "$REDIS_INSTALL_DIR/bin/redis-cli" -a "$REDIS_PASSWORD" ping | grep -q "PONG"; then
+        print_error "Redis 连接测试失败"
+        exit 1
+    fi
+    
+    print_success "Redis 安装验证通过"
+}
+
+redis_install_finish() {
+    print_section "安装完成"
+    print_success "Redis 安装成功"
+    print_info "Redis 版本: ${REDIS_VERSION}"
+    print_info "安装路径: ${REDIS_INSTALL_DIR}"
+    print_info "数据目录: ${REDIS_DATA_DIR}"
+    print_info "日志目录: ${REDIS_LOG_DIR}"
+    print_info "Redis 密码: ${REDIS_PASSWORD}"
+    print_info "服务管理命令:"
+    print_info "  启动: systemctl start redis"
+    print_info "  停止: systemctl stop redis"
+    print_info "  重启: systemctl restart redis"
+    print_info "  状态: systemctl status redis"
+}
+
+# Redis 主安装函数
+redis_install() {
+    print_debug "开始 Redis 安装流程"
+    start_time=$(date +%s)
+    
+    redis_common_check_dependencies
+    redis_install_cleanup_previous
+    redis_install_prepare_directories  # 新增：准备目录结构
+    redis_install_download_package
+    redis_install_compile
+    redis_install_configure
+    redis_install_create_user
+    redis_install_configure_env    # 新增：配置环境变量
+    redis_install_setup_service
+    redis_install_verify
+    redis_install_finish
+}
+
+# Redis 卸载相关函数
+redis_uninstall_stop_service() {
+    print_section "停止 Redis 服务"
+    
+    print_step "停止 Redis 服务..."
+    if systemctl is-active redis >/dev/null 2>&1; then
+        systemctl stop redis
+        print_success "Redis 服务已停止"
+    fi
+    
+    print_step "禁用 Redis 服务..."
+    if systemctl is-enabled redis >/dev/null 2>&1; then
+        systemctl disable redis
+        print_success "Redis 服务已禁用"
+    fi
+    
+    print_step "删除服务文件..."
+    if [ -f "/etc/systemd/system/redis.service" ]; then
+        rm -f "/etc/systemd/system/redis.service"
+        print_success "服务文件已删除"
+    fi
+    
+    # 新增：完全清理 systemd 状态
+    print_step "清理 systemd 状态..."
+    systemctl daemon-reload
+    systemctl reset-failed redis
+    print_success "systemd 状态已清理"
+}
+
+redis_uninstall_remove_files() {
+    print_section "删除 Redis 文件"
+    
+    # 删除标准目录结构
+    local dirs=(
+        "$REDIS_INSTALL_DIR"
+        "$REDIS_CONF_DIR"
+        "$REDIS_SRC_DIR"
+    )
+    
+    for dir in "${dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            print_step "删除目录: $dir..."
+            rm -rf "$dir"
+            print_success "目录已删除: $dir"
+        fi
+    done
+    
+    # 数据和日志目录需要确认
+    if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ] || [ -d "$REDIS_PID_DIR" ]; then
+        print_warning "检测到数据、日志或PID目录"
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除这些目录？(y/n): " remove_data
+        if [ "$remove_data" = "y" ] || [ "$remove_data" = "Y" ]; then
+            rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR"
+            print_success "数据、日志和PID目录已删除"
+        else
+            print_info "保留数据、日志和PID目录"
+        fi
+    fi
+}
+
+redis_uninstall_remove_env_files() {
+    print_section "清理环境变量配置"
+    print_step "清理环境变量文件..."
+    
+    if [ -f "/etc/profile.d/redis.sh" ]; then
+        rm -f "/etc/profile.d/redis.sh"
+        print_success "环境变量文件已删除"
+    fi
+
+    # 清理当前会话的环境变量
+    unset REDIS_HOME
+    # 清理 PATH 中的 Redis 路径
+    export PATH=$(echo $PATH | tr ':' '\n' | grep -v "redis" | tr '\n' ':' | sed 's/:$//')
+    
+    print_success "环境变量已清理"
+}
+
+redis_uninstall_remove_user() {
+    print_section "删除 Redis 用户"
+    
+    if id "$REDIS_USER" >/dev/null 2>&1; then
+        print_step "删除用户..."
+        userdel "$REDIS_USER"
+        print_success "用户已删除"
+    fi
+    
+    if getent group "$REDIS_GROUP" >/dev/null; then
+        print_step "删除用户组..."
+        groupdel "$REDIS_GROUP"
+        print_success "用户组已删除"
+    fi
+}
+
+redis_uninstall_finish() {
+    print_section "卸载完成"
+    print_success "Redis 已完全卸载"
+    print_info "如需重新安装，请重新运行此脚本"
+}
+
+# Redis 主卸载函数
+redis_uninstall() {
+    print_section "卸载 Redis"
+    
+    print_warning "此操作将完全删除 Redis 及其配置"
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
+    
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        print_info "取消卸载"
+        return 0
+    fi
+    
+    redis_common_check_processes
+    redis_uninstall_stop_service
+    redis_uninstall_remove_files
+    redis_uninstall_remove_env_files  # 确保这个函数在这里调用
+    redis_uninstall_remove_user
+    redis_uninstall_finish
+}
+
+# Redis 管理菜单
+manage_redis() {
+    print_section "Redis 管理"
+    print_info "请选择操作:"
+    print_info "1) 安装 Redis"
+    print_info "2) 卸载 Redis"
+    print_info "3) 返回主菜单"
+    
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-3]: " choice
+
+    case $choice in
+        1) redis_install ;;
+        2) redis_uninstall ;;
+        3) main ;;
+        *) print_error "无效的选择"; exit 1 ;;
+    esac
+}
+
+
+
+
+# 6. MySQL 相关函数
 # ======================
 mysql_install() {
     # MySQL 安装主函数
@@ -1363,7 +1862,10 @@ mysql_uninstall() {
     return 0
 }
 
-# 6. 菜单管理函数
+
+
+
+# 7. 菜单管理函数
 # ======================
 manage_java() {
     print_section "JDK 管理"
@@ -1460,17 +1962,19 @@ select_software() {
     print_info "1) 更新 CentOS 软件源"
     print_info "2) Java (JDK)"
     print_info "3) Maven"
-    print_info "4) MySQL"
-    print_info "5) 退出"
+    print_info "4) Redis"
+    print_info "5) MySQL"
+    print_info "6) 退出"
     
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-5]: " software_choice
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-6]: " software_choice
 
     case $software_choice in
         1) centos_repo_update ;;
         2) manage_java ;;
         3) manage_maven ;;
-        4) manage_mysql ;;
-        5) 
+        4) manage_redis ;;
+        5) manage_mysql ;;
+        6) 
             print_info "感谢使用，再见！"
             exit 0
             ;;
@@ -1481,7 +1985,7 @@ select_software() {
     esac
 }
 
-# 7. 主函数
+# 8. 主函数
 # ======================
 main() {
     print_info "HarborKod 软件安装管理工具"
@@ -1490,15 +1994,6 @@ main() {
     print_info "GitHub: https://github.com/harborkod"
     select_software
 }
-
-# Maven 相关变量
-MAVEN_VERSION="3.8.7"
-MAVEN_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/maven/apache-maven-3.8.7-bin.tar.gz"
-DOWNLOAD_DIR="/opt"
-INSTALL_DIR="/usr/local/apache-maven-3.8.7"
-LOCAL_REPO="/repo"  
-MAVEN_USER="maven"
-MAVEN_GROUP="maven"
 
 # 执行主函数
 main 
