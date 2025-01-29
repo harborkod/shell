@@ -1273,7 +1273,7 @@ mvn_install_finish() {
     print_info "Maven 版本: $($MAVEN_HOME/bin/mvn -version | head -n 1)"
     print_info "安装路径: $MVN_INSTALL_DIR"
     print_warning "请执行以下命令使环境变量生效:"
-    print_info "source /etc/profile.d/maven_${mvn_version}.sh"
+    print_info "source /etc/profile.d/maven.sh"
 }
 
 mvn_install() {
