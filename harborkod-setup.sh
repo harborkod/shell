@@ -80,7 +80,6 @@ REDIS_INSTALL_DIR="/usr/local/redis"                # 程序安装目录
 REDIS_CONF_DIR="/etc/redis"                         # 配置文件目录
 REDIS_LOG_DIR="/var/log/redis"                      # 日志目录
 REDIS_DATA_DIR="/var/lib/redis"                     # 数据目录
-REDIS_PID_DIR="/run/redis"                          # PID 文件目录
 REDIS_SRC_DIR="/usr/local/src/redis-${REDIS_VERSION}"  # 源码目录
 
 
@@ -1531,7 +1530,7 @@ redis_install_configure() {
     cat > "${REDIS_CONF_DIR}/redis.conf" <<EOF
 # 基本配置
 daemonize yes
-pidfile /run/redis/redis.pid
+pidfile /run/redis.pid
 port 6379
 bind 0.0.0.0
 timeout 0
@@ -1597,18 +1596,16 @@ redis_install_create_user() {
 
     # 创建并设置目录权限
     print_step "创建并设置目录权限..."
-    mkdir -p "$REDIS_INSTALL_DIR" "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR" "$REDIS_CONF_DIR"
+    mkdir -p "$REDIS_INSTALL_DIR" "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_CONF_DIR"
     
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_INSTALL_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_DATA_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_LOG_DIR"
-    chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_PID_DIR"
     chown root:"$REDIS_GROUP" "$REDIS_CONF_DIR"
     
     chmod 755 "$REDIS_INSTALL_DIR"
     chmod 750 "$REDIS_DATA_DIR"
     chmod 750 "$REDIS_LOG_DIR"
-    chmod 750 "$REDIS_PID_DIR"
     chmod 750 "$REDIS_CONF_DIR"
     
     print_success "用户和权限配置完成"
@@ -1652,22 +1649,17 @@ After=network.target
 
 [Service]
 Type=forking
-User=${REDIS_USER}
-Group=${REDIS_GROUP}
-RuntimeDirectory=redis
-RuntimeDirectoryMode=0755
-PIDFile=/run/redis/redis.pid
+PIDFile=/run/redis.pid
 
-# ExecStartPre: 在启动服务之前执行的命令
-ExecStartPre=/bin/mkdir -p /run/redis
-ExecStartPre=/bin/chown ${REDIS_USER}:${REDIS_GROUP} /run/redis
-ExecStartPre=/bin/chmod 0755 /run/redis
+# ExecStartPre: 启动前处理
+ExecStartPre=/bin/sh -c 'if [ -f /run/redis.pid ]; then rm -f /run/redis.pid; fi'
+ExecStartPre=/bin/sh -c 'touch /run/redis.pid'
 
 # ExecStart: 启动服务的主命令
 ExecStart=${REDIS_INSTALL_DIR}/bin/redis-server ${REDIS_CONF_DIR}/redis.conf
 
 # ExecStartPost: 在服务启动之后执行的命令，这里用于等待 PID 文件创建
-ExecStartPost=/bin/sh -c 'while ! test -f /run/redis/redis.pid; do sleep 0.1; done'
+ExecStartPost=/bin/sh -c 'while ! test -f /run/redis.pid; do sleep 0.1; done'
 
 # ExecStop: 停止服务的命令
 ExecStop=${REDIS_INSTALL_DIR}/bin/redis-cli -a ${REDIS_PASSWORD} shutdown
@@ -1816,18 +1808,18 @@ redis_uninstall_remove_files() {
     done
     
     # 数据和日志目录需要确认
-    if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ] || [ -d "$REDIS_PID_DIR" ]; then
+    if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ]; then
         if [ "$is_silent" = "true" ]; then
             # 静默模式下直接删除
-            rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR"
+            rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR"
         else
-            print_warning "检测到数据、日志或PID目录"
+            print_warning "检测到数据、日志目录"
             read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除这些目录？(y/n): " remove_data
             if [ "$remove_data" = "y" ] || [ "$remove_data" = "Y" ]; then
-                rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_PID_DIR"
-                print_success "数据、日志和PID目录已删除"
+                rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR"
+                print_success "数据、日志目录已删除"
             else
-                print_info "保留数据、日志和PID目录"
+                print_info "保留数据、日志目录"
             fi
         fi
     fi
