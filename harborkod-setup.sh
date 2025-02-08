@@ -32,7 +32,7 @@
 # 1. 全局配置和变量
 # ==============================================
 # 是否开启调试模式 (true/false)
-ENABLE_DEBUG=false
+ENABLE_DEBUG=true
 
 # 日志级别定义
 LOG_DEBUG="DEBUG"
@@ -53,12 +53,16 @@ BOLD='\033[1m'
 # 通用目录配置
 DOWNLOAD_BASE_DIR="/opt"
 
-# JDK 相关变量
+# ==============================================
+# JAVA 相关变量
+# ==============================================
 JDK_VERSION="8u421"
 JDK_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/java/jdk-8u421-linux-x64.tar.gz"
 JDK_INSTALL_DIR="/usr/local/jdk-${JDK_VERSION}"
 
-# Maven 相关变量
+# ==============================================
+# MAVEN 相关变量
+# ==============================================
 MVN_VERSION="3.8.7"
 MVN_USER="maven"
 MVN_GROUP="maven"
@@ -68,7 +72,9 @@ MVN_LOCAL_REPO="/repo"
 
 
 
-# Redis 相关变量
+# ==============================================
+# REDIS 相关变量
+# ==============================================
 REDIS_VERSION="6.2.9"
 REDIS_USER="redis"
 REDIS_GROUP="redis"
@@ -84,13 +90,43 @@ REDIS_SRC_DIR="/usr/local/src/redis-${REDIS_VERSION}"  # 源码目录
 
 
 
+
+# ==============================================
+# MySQL 相关变量
+# ==============================================
+MYSQL_USER="mysql"
+MYSQL_GROUP="mysql"
+MYSQL_ROOT_PASSWORD="harborKod@mysql@admin"
+MYSQL_VERSION="5.7.37"
+MYSQL_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/mysql/mysql-5.7.37.tar.gz"
+
+# 标准目录结构
+MYSQL_INSTALL_DIR="/usr/local/mysql"                # 程序安装目录
+MYSQL_CONF_DIR="/etc/mysql"                         # 配置文件目录
+MYSQL_LOG_DIR="/var/log/mysql"                      # 日志目录
+MYSQL_BINLOG_DIR="/var/log/mysql/binlog"            # 二进制日志目录
+MYSQL_DATA_DIR="/var/lib/mysql"                     # 数据目录
+MYSQL_BACKUP_DIR="/var/backup/mysql"                # 备份目录
+MYSQL_TMP_DIR="/var/tmp/mysql"                      # 临时文件目录
+MYSQL_PID_DIR="/run/mysql"                          # pid文件目录
+MYSQL_SRC_DIR="/usr/local/src/mysql-${MYSQL_VERSION}"  # 源码目录
+
+# Boost 相关变量
+MYSQL_BOOST_VERSION="1_59_0"
+MYSQL_BOOST_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/mysql/boost_1_59_0.tar.gz"
+MYSQL_BOOST_INSTALL_DIR="/usr/local/boost"
+
+
+
+
+
 # ==============================================
 # 日志输出函数
 print_log() {
     local level="$1"
     local message="$2"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     case "$level" in
         "$LOG_DEBUG")
             if [ "$ENABLE_DEBUG" = "true" ]; then
@@ -159,7 +195,7 @@ fi
 # 日志和输出相关函数
 print_header() {
     local total_width=60  # 与 print_section 保持一致的宽度
-    
+
     echo ""
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${NC}"
     printf "%*s%s%*s\n" 15 "" "HarborKod 软件安装管理工具" 15 ""
@@ -174,7 +210,7 @@ get_string_width() {
     local input="$1"
     local width=0
     local char
-    
+
     for (( i=0; i<${#input}; i++ )); do
         char="${input:$i:1}"
         if [[ "$char" =~ [[:print:]] ]]; then
@@ -198,7 +234,7 @@ print_section() {
     local title_width=$(get_string_width "$title")
     local padding=$(( (total_width - title_width) / 2 ))
     local extra_space=$(( (total_width - title_width) % 2 ))
-    
+
     print_info ""
     print_info "┌──────────────────────────────────────────────────────────┐"
     print_info "$(printf "%*s%s%*s" $padding "" "$title" $((padding + extra_space)) "")"
@@ -216,12 +252,12 @@ jdk_common_cleanup_path() {
     # 保存原始 IFS
     local OIFS="$IFS"
     IFS=':'
-    
+
     # 将 PATH 转换为数组
     local -a paths=($PATH)
     declare -A unique_paths
     local new_path=""
-    
+
     for p in "${paths[@]}"; do
         if [[ "$p" != *"java"* ]] && [[ "$p" != *"jdk"* ]]; then
             if [[ -z "${unique_paths[$p]}" ]]; then
@@ -234,7 +270,7 @@ jdk_common_cleanup_path() {
             fi
         fi
     done
-    
+
     IFS="$OIFS"
     export PATH="$new_path"
 }
@@ -289,7 +325,7 @@ jdk_install_check_existing() {
     if command -v java >/dev/null 2>&1; then
         print_info "检测到已安装的 Java 版本："
         java -version 2>&1
-        
+
         if java -version 2>&1 | grep -i "openjdk" >/dev/null; then
             print_warning "检测到系统已安装 OpenJDK"
             read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否要卸载现有的 OpenJDK 后继续安装？(y/n): " remove_choice
@@ -340,14 +376,14 @@ jdk_install_select_version() {
 
     # 获取选择的版本信息
     local selected="${JDK_INFO[$((choice-1))]}"
-    
+
     # 添加调试信息
     print_debug "原始选择信息: $selected"
-    
+
     # 使用 IFS 来分割字符串
     local IFS=":"
     read -r name jdk_version download_url <<< "$selected"
-    
+
     # 设置安装目录
     JDK_INSTALL_DIR="/usr/local/$jdk_version"
 
@@ -414,7 +450,7 @@ jdk_cleanup_alternatives() {
 
 jdk_install_download_package() {
     print_section "下载 JDK 安装包"
-    
+
     # 打印调试信息
     print_debug "当前函数: ${FUNCNAME[0]}"
     print_debug "下载目录: $DOWNLOAD_BASE_DIR"
@@ -442,7 +478,7 @@ jdk_install_download_package() {
     local download_host
     download_host=$(echo "$download_url" | cut -d'/' -f3)
     print_step "检查网络连接: $download_host"
-    
+
     if ! ping -c 1 -W 3 "$download_host" >/dev/null 2>&1; then
         print_error "无法连接到下载服务器: $download_host"
         print_info "请检查:"
@@ -459,7 +495,7 @@ jdk_install_download_package() {
     # 尝试下载，显示进度条
     for i in {1..3}; do
         print_step "第 $i 次尝试下载..."
-        
+
         # 使用 wget 下载，显示进度，保留错误输出
         if wget --no-check-certificate \
                 --progress=bar:force \
@@ -502,7 +538,7 @@ jdk_install_download_package() {
 
 jdk_install_prepare_directory() {
     print_section "准备安装目录"
-    
+
     required_space=500000
     available_space=$(df "$DOWNLOAD_BASE_DIR" | tail -1 | awk '{print $4}')
     if [ "$available_space" -lt "$required_space" ]; then
@@ -520,7 +556,7 @@ jdk_install_prepare_directory() {
 jdk_install_extract_package() {
     print_section "解压 JDK 安装包"
     print_step "正在解压: $jdk_package"
-    
+
     case "$jdk_package" in
         *.tar.gz|*.tgz)
             if ! tar -xzf "$jdk_package" -C "$JDK_INSTALL_DIR" --strip-components=1; then
@@ -550,16 +586,16 @@ jdk_install_extract_package() {
         print_error "解压后未找到预期的目录结构"
         exit 1
     fi
-    
+
     print_success "解压完成: $JDK_INSTALL_DIR"
 }
 
 jdk_install_configure_env() {
     print_section "配置环境变量"
-    
+
     env_file="/etc/profile.d/java_${jdk_version}.sh"
     print_step "创建环境变量配置文件"
-    
+
     cat <<EOF | sudo tee "$env_file" >/dev/null
 # Java 环境变量 - $jdk_version
 export JAVA_HOME=$JDK_INSTALL_DIR
@@ -581,7 +617,7 @@ EOF
 
 jdk_install_set_default() {
     print_section "配置默认 Java 版本"
-    
+
     # 检查 alternatives 命令
     if command -v update-alternatives >/dev/null 2>&1; then
         ALTERNATIVES_CMD="update-alternatives"
@@ -599,7 +635,7 @@ jdk_install_set_default() {
     fi
 
     print_step "配置 Java alternatives"
-    
+
     # 清理已有的 alternatives 配置
     for cmd in java javac jar jps; do
         if $ALTERNATIVES_CMD --display $cmd >/dev/null 2>&1; then
@@ -611,21 +647,21 @@ jdk_install_set_default() {
             done
         fi
     done
-    
+
     # 添加新的配置
     print_step "添加新的 alternatives 配置..."
     sudo $ALTERNATIVES_CMD --install /usr/bin/java java "$JDK_INSTALL_DIR/bin/java" 2000 \
         --slave /usr/bin/javac javac "$JDK_INSTALL_DIR/bin/javac" \
         --slave /usr/bin/jar jar "$JDK_INSTALL_DIR/bin/jar" \
         --slave /usr/bin/jps jps "$JDK_INSTALL_DIR/bin/jps"
-    
+
     # 设置为默认版本
     print_step "设置为默认版本..."
     sudo $ALTERNATIVES_CMD --set java "$JDK_INSTALL_DIR/bin/java"
-    
+
     # 验证设置
     current_java=$($ALTERNATIVES_CMD --display java | grep "link currently points to" | awk '{print $NF}')
-    
+
     if [ "$current_java" = "$JDK_INSTALL_DIR/bin/java" ]; then
         print_success "已成功设置 $jdk_version 为默认版本"
     else
@@ -638,9 +674,9 @@ jdk_install_set_default() {
 
 jdk_install_verify() {
     print_section "验证安装结果"
-    
+
     source "/etc/profile.d/java_${jdk_version}.sh"
-    
+
     if [ -x "$JAVA_HOME/bin/java" ]; then
         print_success "Java 安装成功"
         print_info "版本信息如下:"
@@ -657,7 +693,7 @@ jdk_install_verify() {
 jdk_install_finish() {
     end_time=$(date +%s)
     execution_time=$((end_time - start_time))
-    
+
     print_section "安装完成"
     print_success "Java 安装成功"
     print_info "安装用时: ${execution_time} 秒"
@@ -694,7 +730,7 @@ jdk_install() {
 jdk_uninstall_remove_alternatives() {
     print_section "清理 Alternatives 配置"
     print_step "清理 alternatives 配置..."
-    
+
     if command -v update-alternatives >/dev/null 2>&1; then
         ALTERNATIVES_CMD="update-alternatives"
     elif command -v alternatives >/dev/null 2>&1; then
@@ -722,7 +758,7 @@ jdk_uninstall_remove_alternatives() {
 jdk_uninstall_remove_env_files() {
     print_section "清理环境变量配置"
     print_step "清理环境变量文件..."
-    
+
     for env_file in /etc/profile.d/java_*.sh; do
         if [ -f "$env_file" ]; then
             sudo rm -f "$env_file"
@@ -734,7 +770,7 @@ jdk_uninstall_remove_env_files() {
 jdk_uninstall_remove_installation() {
     print_section "清理安装目录"
     print_step "清理 JDK 安装目录..."
-    
+
     local java_dirs=("/usr/local/jdk*" "/usr/local/java*" "/usr/local/openjdk*")
     for dir_pattern in "${java_dirs[@]}"; do
         for dir in $dir_pattern; do
@@ -749,7 +785,7 @@ jdk_uninstall_remove_installation() {
 jdk_uninstall_remove_downloads() {
     print_section "清理下载文件"
     print_step "清理 JDK 安装包..."
-    
+
     for file in /opt/jdk*.tar.gz /opt/openjdk*.tar.gz; do
         if [ -f "$file" ]; then
             sudo rm -f "$file"
@@ -761,7 +797,7 @@ jdk_uninstall_remove_downloads() {
 jdk_uninstall_cleanup_env_vars() {
     print_section "清理环境变量"
     print_step "清理当前会话的环境变量..."
-    
+
     unset JAVA_HOME
     jdk_common_cleanup_path
     print_success "当前会话的环境变量已清理"
@@ -784,7 +820,7 @@ jdk_uninstall_remove_system_jdk() {
 jdk_uninstall_remove_symlinks() {
     print_section "清理符号链接"
     print_step "清理 Java 相关符号链接..."
-    
+
     local links=("/usr/bin/java" "/usr/bin/javac" "/usr/bin/jar" "/usr/bin/jps")
     for link in "${links[@]}"; do
         if [ -L "$link" ]; then
@@ -807,10 +843,10 @@ jdk_uninstall_finish() {
 # 主卸载函数
 jdk_uninstall() {
     print_section "卸载 JDK"
-    
+
     print_warning "此操作将完全删除 JDK 及其配置"
     read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
-    
+
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         print_info "取消卸载"
         return 0
@@ -818,13 +854,13 @@ jdk_uninstall() {
 
     print_info "开始清理 Java 进程..."
     jdk_common_check_processes
-    
+
     print_info "开始清理 alternatives 配置..."
     jdk_uninstall_remove_alternatives
-    
+
     print_info "开始清理环境变量..."
     jdk_uninstall_remove_env_files
-    
+
     print_info "卸载完成"
 }
 
@@ -839,12 +875,12 @@ mvn_common_cleanup_path() {
     # 保存原始 IFS
     local OIFS="$IFS"
     IFS=':'
-    
+
     # 将 PATH 转换为数组
     local -a paths=($PATH)
     declare -A unique_paths
     local new_path=""
-    
+
     for p in "${paths[@]}"; do
         if [[ "$p" != *"maven"* ]]; then
             if [[ -z "${unique_paths[$p]}" ]]; then
@@ -857,21 +893,21 @@ mvn_common_cleanup_path() {
             fi
         fi
     done
-    
+
     IFS="$OIFS"
     export PATH="$new_path"
 }
 
 mvn_common_check_dependencies() {
     print_section "检查 Maven 安装依赖"
-    
+
     # 检查 JDK 是否已安装
     if ! command -v java >/dev/null 2>&1; then
         print_error "未检测到 JDK，Maven 依赖 JDK 环境"
         print_info "请先安装 JDK"
         exit 1
     fi
-    
+
     # 检查必要的工具
     for cmd in wget tar; do
         if ! command -v $cmd >/dev/null 2>&1; then
@@ -930,7 +966,7 @@ mvn_install_select_version() {
     mvn_version="apache-maven-3.8.7"
     download_url="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/maven/apache-maven-3.8.7-bin.tar.gz"
     MVN_INSTALL_DIR="/usr/local/$mvn_version"
-    
+
     print_info "将安装: Apache Maven 3.8.7"
     print_debug "安装目录: $MVN_INSTALL_DIR"
     print_debug "下载地址: $download_url"
@@ -963,7 +999,7 @@ mvn_install_cleanup_previous() {
 
 mvn_install_download_package() {
     print_section "下载 Maven 安装包"
-    
+
     # 打印调试信息
     print_debug "当前函数: ${FUNCNAME[0]}"
     print_debug "下载目录: $DOWNLOAD_BASE_DIR"
@@ -991,7 +1027,7 @@ mvn_install_download_package() {
     local download_host
     download_host=$(echo "$download_url" | cut -d'/' -f3)
     print_step "检查网络连接: $download_host"
-    
+
     if ! ping -c 1 -W 3 "$download_host" >/dev/null 2>&1; then
         print_error "无法连接到下载服务器: $download_host"
         print_info "请检查:"
@@ -1008,7 +1044,7 @@ mvn_install_download_package() {
     # 尝试下载，显示进度条
     for i in {1..3}; do
         print_step "第 $i 次尝试下载..."
-        
+
         # 使用 wget 下载，显示进度，保留错误输出
         if wget --no-check-certificate \
                 --progress=bar:force \
@@ -1060,7 +1096,7 @@ mvn_install_download_package() {
 
 mvn_install_prepare_directory() {
     print_section "准备安装目录"
-    
+
     required_space=50000  # Maven 需要的空间比 JDK 小
     available_space=$(df "$DOWNLOAD_BASE_DIR" | tail -1 | awk '{print $4}')
     if [ "$available_space" -lt "$required_space" ]; then
@@ -1078,7 +1114,7 @@ mvn_install_prepare_directory() {
 mvn_install_extract_package() {
     print_section "解压 Maven 安装包"
     print_step "正在解压: $mvn_package"
-    
+
     if ! tar -xzf "$mvn_package" -C "$MVN_INSTALL_DIR" --strip-components=1; then
         print_error "解压失败"
         exit 1
@@ -1088,13 +1124,13 @@ mvn_install_extract_package() {
         print_error "解压后未找到预期的目录结构"
         exit 1
     fi
-    
+
     print_success "解压完成: $MVN_INSTALL_DIR"
 }
 
 mvn_install_modify_settings() {
     print_section "配置 Maven"
-    
+
     # 检查本地仓库所需空间
     print_step "检查本地仓库所需空间..."
     local available_space_root=$(df / | tail -1 | awk '{print $4}')
@@ -1161,10 +1197,10 @@ EOL
 
 mvn_install_create_user() {
     print_section "配置用户和权限"
-    
+
     local maven_user="maven"
     local maven_group="maven"
-    
+
     # 创建用户组
     print_step "创建用户组..."
     if ! getent group "$maven_group" > /dev/null; then
@@ -1202,14 +1238,14 @@ mvn_install_create_user() {
 
 mvn_install_configure_env() {
     print_section "配置环境变量"
-    
+
     # 6.1 设置 Maven 环境变量
     env_file="/etc/profile.d/maven.sh"
     print_step "创建环境变量配置..."
-    
+
     # 先清理已存在的 Maven 路径
     mvn_common_cleanup_path
-    
+
     # 检查环境变量文件是否存在
     if [ -f "$env_file" ]; then
         print_step "检查现有环境变量配置..."
@@ -1248,24 +1284,24 @@ EOF
 
 mvn_install_verify() {
     print_section "验证安装结果"
-    
+
     # 先加载环境变量
     source "/etc/profile.d/maven.sh"
-    
+
     print_step "检查 Maven 版本..."
     if ! mvn -v; then
         print_error "Maven 安装失败"
         print_warning "请检查环境变量是否生效: source /etc/profile.d/maven.sh"
         exit 1
     fi
-    
+
     print_success "Maven 安装成功"
 }
 
 mvn_install_finish() {
     end_time=$(date +%s)
     execution_time=$((end_time - start_time))
-    
+
     print_section "安装完成"
     print_success "Maven 安装成功"
     print_info "安装用时: ${execution_time} 秒"
@@ -1284,7 +1320,7 @@ mvn_install() {
     print_debug "可用磁盘: $(df -h /)"
 
     start_time=$(date +%s)
-    
+
     mvn_common_cleanup_path
     mvn_common_check_dependencies
     mvn_install_check_existing
@@ -1293,9 +1329,9 @@ mvn_install() {
     mvn_install_download_package
     mvn_install_prepare_directory
     mvn_install_extract_package
-    mvn_install_modify_settings    
+    mvn_install_modify_settings
     mvn_install_configure_env
-    mvn_install_create_user      
+    mvn_install_create_user
     mvn_install_verify
     mvn_install_finish
 }
@@ -1304,7 +1340,7 @@ mvn_install() {
 mvn_uninstall_remove_env_files() {
     print_section "清理环境变量配置"
     print_step "清理环境变量文件..."
-    
+
     for env_file in /etc/profile.d/maven_*.sh; do
         if [ -f "$env_file" ]; then
             sudo rm -f "$env_file"
@@ -1316,7 +1352,7 @@ mvn_uninstall_remove_env_files() {
 mvn_uninstall_remove_installation() {
     print_section "清理安装目录"
     print_step "清理 Maven 安装目录..."
-    
+
     local maven_dirs=("/usr/local/apache-maven*")
     for dir_pattern in "${maven_dirs[@]}"; do
         for dir in $dir_pattern; do
@@ -1331,7 +1367,7 @@ mvn_uninstall_remove_installation() {
 mvn_uninstall_remove_downloads() {
     print_section "清理下载文件"
     print_step "清理 Maven 安装包..."
-    
+
     for file in /opt/apache-maven*.tar.gz; do
         if [ -f "$file" ]; then
             sudo rm -f "$file"
@@ -1343,7 +1379,7 @@ mvn_uninstall_remove_downloads() {
 mvn_uninstall_cleanup_env_vars() {
     print_section "清理环境变量"
     print_step "清理当前会话的环境变量..."
-    
+
     unset MAVEN_HOME
     mvn_common_cleanup_path
     print_success "当前会话的环境变量已清理"
@@ -1359,10 +1395,10 @@ mvn_uninstall_finish() {
 # 主卸载函数
 mvn_uninstall() {
     print_section "卸载 Maven"
-    
+
     print_warning "此操作将完全删除 Maven 及其配置"
     read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
-    
+
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         print_info "取消卸载"
         return 0
@@ -1370,7 +1406,7 @@ mvn_uninstall() {
 
     print_info "开始清理 Maven 进程..."
     mvn_common_check_processes
-    
+
     # 清理本地仓库
     if [ -d "$MVN_LOCAL_REPO" ]; then
         print_warning "检测到 Maven 本地仓库: $MVN_LOCAL_REPO"
@@ -1382,7 +1418,7 @@ mvn_uninstall() {
             print_info "保留本地仓库"
         fi
     fi
-    
+
     print_info "开始清理环境变量..."
     mvn_uninstall_remove_env_files
     mvn_uninstall_remove_installation
@@ -1400,7 +1436,7 @@ mvn_uninstall() {
 # Redis 通用函数
 redis_common_check_dependencies() {
     print_section "检查 Redis 安装依赖"
-    
+
     # 检查 root 权限
     if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
         print_error "此脚本需要 root 权限或 sudo 命令"
@@ -1429,7 +1465,7 @@ redis_common_check_dependencies() {
 redis_common_check_processes() {
     print_section "检查 Redis 进程"
     print_step "检查是否有正在运行的 Redis 进程..."
-    
+
     # 检查端口 6379 是否被占用
     local pid=$(lsof -t -i:6379)
     if [ -n "$pid" ]; then
@@ -1451,10 +1487,10 @@ redis_common_check_processes() {
 # Redis 安装相关函数
 redis_install_cleanup_previous() {
     print_section "清理历史数据"
-    
+
     # 检查并终止 Redis 进程
     redis_common_check_processes
-    
+
     # 删除旧的安装目录
     if [ -d "$REDIS_INSTALL_DIR" ]; then
         print_step "删除旧的 Redis 安装目录..."
@@ -1480,7 +1516,7 @@ redis_install_cleanup_previous() {
 redis_install_download_package() {
     print_section "下载 Redis 源码"
     cd "$DOWNLOAD_BASE_DIR"
-    
+
     local package_name="redis-${REDIS_VERSION}.tar.gz"
     if [ -f "$package_name" ]; then
         print_info "Redis 源码包已存在，跳过下载"
@@ -1502,29 +1538,29 @@ redis_install_download_package() {
 redis_install_compile() {
     print_section "编译 Redis"
     cd "$REDIS_SRC_DIR"
-    
+
     print_step "开始编译..."
     if ! make -j$(nproc); then
         print_error "编译失败"
         exit 1
     fi
-    
+
     print_step "安装到指定目录..."
     if ! make install PREFIX="$REDIS_INSTALL_DIR"; then
         print_error "安装失败"
         exit 1
     fi
-    
+
     print_success "编译安装完成"
 }
 
 redis_install_configure() {
     print_section "配置 Redis"
-    
+
     # 创建必要的目录
     print_step "创建标准目录结构..."
     mkdir -p "$REDIS_CONF_DIR" "$REDIS_LOG_DIR" "$REDIS_DATA_DIR"
-    
+
     # 创建配置文件
     print_step "创建配置文件..."
     cat > "${REDIS_CONF_DIR}/redis.conf" <<EOF
@@ -1571,7 +1607,7 @@ EOF
     if ! getent group "$REDIS_GROUP" > /dev/null; then
         groupadd "$REDIS_GROUP"
     fi
-    
+
     chown root:"$REDIS_GROUP" "${REDIS_CONF_DIR}/redis.conf"
     chmod 640 "${REDIS_CONF_DIR}/redis.conf"
 
@@ -1580,7 +1616,7 @@ EOF
 
 redis_install_create_user() {
     print_section "创建用户和权限"
-    
+
     # 创建用户组和用户
     if ! getent group "$REDIS_GROUP" > /dev/null; then
         print_step "创建用户组..."
@@ -1597,26 +1633,26 @@ redis_install_create_user() {
     # 创建并设置目录权限
     print_step "创建并设置目录权限..."
     mkdir -p "$REDIS_INSTALL_DIR" "$REDIS_DATA_DIR" "$REDIS_LOG_DIR" "$REDIS_CONF_DIR"
-    
+
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_INSTALL_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_DATA_DIR"
     chown -R "$REDIS_USER:$REDIS_GROUP" "$REDIS_LOG_DIR"
     chown root:"$REDIS_GROUP" "$REDIS_CONF_DIR"
-    
+
     chmod 755 "$REDIS_INSTALL_DIR"
     chmod 750 "$REDIS_DATA_DIR"
     chmod 750 "$REDIS_LOG_DIR"
     chmod 750 "$REDIS_CONF_DIR"
-    
+
     print_success "用户和权限配置完成"
 }
 
 redis_install_configure_env() {
     print_section "配置环境变量"
-    
+
     env_file="/etc/profile.d/redis.sh"
     print_step "创建环境变量配置文件..."
-    
+
     cat > "$env_file" <<EOF
 # Redis 环境变量配置
 export REDIS_HOME=${REDIS_INSTALL_DIR}
@@ -1640,7 +1676,7 @@ EOF
 
 redis_install_setup_service() {
     print_section "配置系统服务"
-    
+
     print_step "创建 systemd 服务文件..."
     cat > /etc/systemd/system/redis.service <<EOF
 [Unit]
@@ -1674,48 +1710,48 @@ EOF
 
     print_step "重载 systemd 配置..."
     systemctl daemon-reload
-    
+
     print_step "启用 Redis 服务..."
     systemctl enable redis
-    
+
     print_step "启动 Redis 服务..."
     if ! systemctl start redis; then
         print_error "Redis 服务启动失败"
-        
+
         print_info "===== 服务状态 ====="
         systemctl status redis 2>&1
-        
+
         print_info "===== 系统日志 ====="
         journalctl -xe --unit=redis 2>&1
-        
+
         print_info "===== Redis 日志 ====="
         tail -n 50 "${REDIS_LOG_DIR}/redis.log" 2>&1
-        
+
         exit 1
     fi
-    
+
     # 等待服务完全启动
     sleep 2
-    
+
     print_success "系统服务配置完成"
 }
 
 redis_install_verify() {
     print_section "验证安装结果"
-    
+
     print_step "检查 Redis 服务状态..."
     if ! systemctl is-active redis >/dev/null 2>&1; then
         print_error "Redis 服务未能正常启动"
         exit 1
     fi
-    
+
     print_step "检查 Redis 连接..."
     # 直接使用 -a 参数，忽略警告信息
     if ! "$REDIS_INSTALL_DIR/bin/redis-cli" -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
         print_error "Redis 连接测试失败"
         exit 1
     fi
-    
+
     print_success "Redis 安装验证通过"
 }
 
@@ -1738,11 +1774,11 @@ redis_install_finish() {
 redis_install() {
     print_debug "开始 Redis 安装流程"
     start_time=$(date +%s)
-    
+
     # 先执行卸载操作，传入静默参数
     print_step "执行清理操作..."
     redis_uninstall true >/dev/null 2>&1 || true
-    
+
     # 继续安装流程
     redis_common_check_dependencies
     redis_install_cleanup_previous
@@ -1760,25 +1796,25 @@ redis_install() {
 # Redis 卸载相关函数
 redis_uninstall_stop_service() {
     print_section "停止 Redis 服务"
-    
+
     print_step "停止 Redis 服务..."
     if systemctl is-active redis >/dev/null 2>&1; then
         systemctl stop redis
         print_success "Redis 服务已停止"
     fi
-    
+
     print_step "禁用 Redis 服务..."
     if systemctl is-enabled redis >/dev/null 2>&1; then
         systemctl disable redis
         print_success "Redis 服务已禁用"
     fi
-    
+
     print_step "删除服务文件..."
     if [ -f "/etc/systemd/system/redis.service" ]; then
         rm -f "/etc/systemd/system/redis.service"
         print_success "服务文件已删除"
     fi
-    
+
     # 新增：完全清理 systemd 状态
     print_step "清理 systemd 状态..."
     systemctl daemon-reload
@@ -1788,17 +1824,17 @@ redis_uninstall_stop_service() {
 
 redis_uninstall_remove_files() {
     print_section "删除 Redis 文件"
-    
+
     # 获取静默模式参数
     local is_silent=${1:-false}
-    
+
     # 删除标准目录结构
     local dirs=(
         "$REDIS_INSTALL_DIR"
         "$REDIS_CONF_DIR"
         "$REDIS_SRC_DIR"
     )
-    
+
     for dir in "${dirs[@]}"; do
         if [ -d "$dir" ]; then
             print_step "删除目录: $dir..."
@@ -1806,7 +1842,7 @@ redis_uninstall_remove_files() {
             print_success "目录已删除: $dir"
         fi
     done
-    
+
     # 数据和日志目录需要确认
     if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ]; then
         if [ "$is_silent" = "true" ]; then
@@ -1828,7 +1864,7 @@ redis_uninstall_remove_files() {
 redis_uninstall_remove_env_files() {
     print_section "清理环境变量配置"
     print_step "清理环境变量文件..."
-    
+
     if [ -f "/etc/profile.d/redis.sh" ]; then
         rm -f "/etc/profile.d/redis.sh"
         print_success "环境变量文件已删除"
@@ -1838,19 +1874,19 @@ redis_uninstall_remove_env_files() {
     unset REDIS_HOME
     # 清理 PATH 中的 Redis 路径
     export PATH=$(echo $PATH | tr ':' '\n' | grep -v "redis" | tr '\n' ':' | sed 's/:$//')
-    
+
     print_success "环境变量已清理"
 }
 
 redis_uninstall_remove_user() {
     print_section "删除 Redis 用户"
-    
+
     if id "$REDIS_USER" >/dev/null 2>&1; then
         print_step "删除用户..."
         userdel "$REDIS_USER"
         print_success "用户已删除"
     fi
-    
+
     if getent group "$REDIS_GROUP" >/dev/null; then
         print_step "删除用户组..."
         groupdel "$REDIS_GROUP"
@@ -1867,20 +1903,20 @@ redis_uninstall_finish() {
 # Redis 主卸载函数
 redis_uninstall() {
     print_section "卸载 Redis"
-    
+
     # 如果是通过安装函数调用的，则静默执行
     local is_silent=${1:-false}
-    
+
     if [ "$is_silent" = "false" ]; then
         print_warning "此操作将完全删除 Redis 及其配置"
         read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
-        
+
         if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
             print_info "取消卸载"
             return 0
         fi
     fi
-    
+
     redis_common_check_processes
     redis_uninstall_stop_service
     redis_uninstall_remove_files "$is_silent"  # 传递静默参数
@@ -1896,7 +1932,7 @@ manage_redis() {
     print_info "1) 安装 Redis"
     print_info "2) 卸载 Redis"
     print_info "3) 返回主菜单"
-    
+
     read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-3]: " choice
 
     case $choice in
@@ -1912,14 +1948,1263 @@ manage_redis() {
 
 # 6. MySQL 相关函数
 # ======================
-mysql_install() {
-    # MySQL 安装主函数
-    return 0
+
+# MySQL 通用函数
+
+
+# MySQL 安装主函数
+
+# ==============================================
+# MySQL 通用函数
+# ==============================================
+
+# 检查磁盘空间
+mysql_common_check_disk() {
+    AVAILABLE_SPACE=$(df /usr/local | tail -1 | awk '{print $4}')
+    if [ "$AVAILABLE_SPACE" -lt 5000000 ]; then
+        print_error "磁盘空间不足，至少需要 5GB 可用空间。"
+        exit 1
+    fi
 }
 
+# 检查内存空间
+mysql_common_check_mem() {
+    TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
+    AVAILABLE_MEM=$(free -m | awk '/^Mem:/{print $7}')
+
+    # 当前内存总大小，当前内存可用大小
+    print_info "当前内存总大小: $TOTAL_MEM MB"
+    print_info "当前内存可用大小: $AVAILABLE_MEM MB"
+
+    # 总内存空间至少3.5GB
+    if [ "$TOTAL_MEM" -lt 3500 ]; then
+        print_error "内存空间不足，至少需要 3.5GB 可用内存。"
+        exit 1
+    fi
+
+    # 可用内存空间至少3GB
+    if [ "$AVAILABLE_MEM" -lt 3500 ]; then
+        print_error "内存空间不足，至少需要 3.5GB 可用内存。"
+        exit 1
+    fi
+}
+
+# 检查并安装 MySQL 依赖
+mysql_common_check_dependencies() {
+    print_section "检查 MySQL 安装依赖"
+
+    # 检查 root 权限
+    if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
+        print_error "此脚本需要 root 权限或 sudo 命令"
+        exit 1
+    fi
+
+    # 检测操作系统
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        VERSION=$VERSION_ID
+    else
+        print_error "无法检测操作系统"
+        exit 1
+    fi
+
+    print_info "检测到系统: $OS $VERSION"
+
+    # 依赖列表
+    dependencies=("gcc" "gcc-c++" "ncurses-devel" "openssl" "openssl-devel" "bison" "bzip2" "make" "cmake" "perl" "wget" "tar" "libtirpc-devel")
+
+    # `rpcgen` 需要特殊处理
+    need_rpcgen=false
+    if ! command -v rpcgen >/dev/null 2>&1; then
+        need_rpcgen=true
+    fi
+
+    # 根据系统选择包管理器
+    if command -v apt-get >/dev/null 2>&1; then
+        PKG_MANAGER="apt-get"
+        INSTALL_CMD="apt-get install -y"
+    elif command -v dnf >/dev/null 2>&1; then
+        PKG_MANAGER="dnf"
+        INSTALL_CMD="dnf install -y"
+    elif command -v yum >/dev/null 2>&1; then
+        PKG_MANAGER="yum"
+        INSTALL_CMD="yum install -y"
+    elif command -v pacman >/dev/null 2>&1; then
+        PKG_MANAGER="pacman"
+        INSTALL_CMD="pacman -Sy --noconfirm"
+    elif command -v apk >/dev/null 2>&1; then
+        PKG_MANAGER="apk"
+        INSTALL_CMD="apk add --no-cache"
+    elif command -v zypper >/dev/null 2>&1; then
+        PKG_MANAGER="zypper"
+        INSTALL_CMD="zypper install -y"
+    else
+        print_error "无法检测合适的包管理器"
+        exit 1
+    fi
+
+    print_info "使用包管理器: $PKG_MANAGER"
+
+    # 逐个检查并安装依赖
+    for pkg in "${dependencies[@]}"; do
+        case "$PKG_MANAGER" in
+            apt-get)
+                if ! dpkg -s "$pkg" &>/dev/null 2>&1; then
+                    print_warning "未检测到 $pkg，正在安装..."
+                    sudo $INSTALL_CMD "$pkg"
+                    print_success "$pkg 安装完成"
+                else
+                    print_success "$pkg 已安装"
+                fi
+                ;;
+            yum|dnf)
+                if ! rpm -q "$pkg" &>/dev/null; then
+                    print_warning "未检测到 $pkg，正在安装..."
+                    sudo $INSTALL_CMD "$pkg"
+                    print_success "$pkg 安装完成"
+                else
+                    print_success "$pkg 已安装"
+                fi
+                ;;
+            pacman)
+                if ! pacman -Qi "$pkg" &>/dev/null; then
+                    print_warning "未检测到 $pkg，正在安装..."
+                    sudo $INSTALL_CMD "$pkg"
+                    print_success "$pkg 安装完成"
+                else
+                    print_success "$pkg 已安装"
+                fi
+                ;;
+            apk)
+                if ! apk info "$pkg" &>/dev/null; then
+                    print_warning "未检测到 $pkg，正在安装..."
+                    sudo $INSTALL_CMD "$pkg"
+                    print_success "$pkg 安装完成"
+                else
+                    print_success "$pkg 已安装"
+                fi
+                ;;
+            zypper)
+                if ! rpm -q "$pkg" &>/dev/null; then
+                    print_warning "未检测到 $pkg，正在安装..."
+                    sudo $INSTALL_CMD "$pkg"
+                    print_success "$pkg 安装完成"
+                else
+                    print_success "$pkg 已安装"
+                fi
+                ;;
+        esac
+    done
+
+    # 处理 `rpcgen` 安装
+    if $need_rpcgen; then
+        print_warning "未检测到 rpcgen，正在安装..."
+
+        case "$OS" in
+            rocky|almalinux|centos)
+                print_info "Rocky/Alma/CentOS 需要启用 powertools 进行安装"
+                sudo dnf install -y --enablerepo=powertools rpcgen
+                ;;
+            rhel)
+                print_info "RHEL 需要启用 CodeReady Builder 仓库"
+                sudo subscription-manager repos --enable "codeready-builder-for-rhel-$(rpm -E %rhel)-$(arch)-rpms"
+                sudo dnf install -y rpcgen
+                ;;
+            debian|ubuntu)
+                print_info "Debian/Ubuntu 直接使用 apt-get 安装"
+                sudo apt-get install -y rpcgen
+                ;;
+            arch)
+                print_info "Arch Linux 直接使用 pacman 安装"
+                sudo pacman -Sy --noconfirm rpcgen
+                ;;
+            alpine)
+                print_info "Alpine Linux 直接使用 apk 安装"
+                sudo apk add --no-cache rpcgen
+                ;;
+            opensuse|sles)
+                print_info "openSUSE / SLES 直接使用 zypper 安装"
+                sudo zypper install -y rpcgen
+                ;;
+            *)
+                print_error "不支持的系统: $OS，无法自动安装 rpcgen，请手动安装"
+                exit 1
+                ;;
+        esac
+
+        # 检查是否安装成功
+        if command -v rpcgen >/dev/null 2>&1; then
+            print_success "rpcgen 安装完成"
+        else
+            print_error "rpcgen 安装失败，请手动检查"
+            exit 1
+        fi
+    else
+        print_success "rpcgen 已安装"
+    fi
+}
+
+# 检查 MySQL 进程
+mysql_common_check_processes() {
+    print_section "检查 MySQL 进程"
+    print_step "检查是否有正在运行的 MySQL 进程..."
+
+    local mysql_pid=$(pgrep -x mysqld)
+    if [ -n "$mysql_pid" ]; then
+        print_warning "检测到正在运行的 MySQL 进程 (PID: $mysql_pid)"
+        kill -15 $mysql_pid
+        sleep 2
+        if kill -0 $mysql_pid 2>/dev/null; then
+            kill -9 $mysql_pid
+        fi
+        print_success "MySQL 进程已终止"
+    else
+        print_info "未检测到运行中的 MySQL 进程"
+    fi
+}
+
+# 清理原有的配置及环境
+mysql_common_cleanup() {
+    print_section "清理系统环境"
+
+    # 1. 停止服务和进程
+    print_step "停止 MySQL 服务和进程..."
+    if systemctl is-active mysql >/dev/null 2>&1; then
+        systemctl stop mysql
+        systemctl disable mysql
+        print_success "MySQL 服务已停止并禁用"
+    fi
+
+    local mysql_pid=$(pgrep -x mysqld)
+    if [ -n "$mysql_pid" ]; then
+        kill -15 $mysql_pid
+        sleep 2
+        if kill -0 $mysql_pid 2>/dev/null; then
+            kill -9 $mysql_pid
+        fi
+        print_success "MySQL 进程已终止"
+    fi
+
+    # 2. 清理所有相关目录
+    print_step "清理目录..."
+    local dirs=(
+        "$MYSQL_INSTALL_DIR"      # 安装目录
+        "$MYSQL_CONF_DIR"         # 配置目录
+        "$MYSQL_LOG_DIR"          # 日志目录
+        "$MYSQL_DATA_DIR"         # 数据目录
+        "$MYSQL_BACKUP_DIR"       # 备份目录
+        "$MYSQL_TMP_DIR"          # 临时目录
+        "$MYSQL_BINLOG_DIR"       # 二进制日志目录
+        "$MYSQL_SRC_DIR"          # 源码目录
+        "$MYSQL_PID_DIR"          # pid目录
+        "$MYSQL_BOOST_INSTALL_DIR"      # Boost库目录
+        "/usr/local/src/mysql*"   # 其他可能的源码目录
+        "/usr/local/mysql*"       # 其他可能的安装目录
+    )
+
+    for dir in "${dirs[@]}"; do
+        rm -rf $dir
+        print_success "已清理目录: $dir"
+    done
+
+    # 3. 清理系统服务和配置文件
+    print_step "清理系统服务和配置..."
+    local config_files=(
+        "/etc/systemd/system/mysql.service"
+        "/etc/systemd/system/mysqld.service"
+        "/etc/init.d/mysql"
+        "/etc/init.d/mysqld"
+        "/etc/my.cnf"
+        "/etc/my.cnf.d"
+        "/etc/mysql"
+    )
+
+    for file in "${config_files[@]}"; do
+        rm -rf $file
+    done
+    systemctl daemon-reload
+    print_success "服务配置已清理"
+
+    # 4. 清理环境变量
+    print_step "清理环境变量..."
+    rm -f /etc/profile.d/mysql.sh
+    rm -f /etc/profile.d/mysql_env.sh
+    unset MYSQL_HOME
+    print_success "环境变量已清理"
+
+    # 5. 清理用户和组
+    print_step "清理用户和组..."
+    local users=("mysql" "mysqld" "$MYSQL_USER")
+    local groups=("mysql" "mysqld" "$MYSQL_GROUP")
+
+    for user in "${users[@]}"; do
+        if id "$user" >/dev/null 2>&1; then
+            userdel -rf "$user"
+        fi
+    done
+
+    for group in "${groups[@]}"; do
+        if getent group "$group" >/dev/null; then
+            groupdel "$group"
+        fi
+    done
+    print_success "用户和组已清理"
+
+    # 6. 清理所有临时文件和下载文件
+    print_step "清理临时文件和下载文件..."
+    rm -rf /tmp/mysql*
+    rm -rf /var/tmp/mysql*
+    rm -f /opt/mysql-*.tar.gz
+    rm -f /opt/boost_*.tar.gz
+    print_success "临时文件已清理"
+
+    # 7. 清理日志文件
+    print_step "清理日志文件..."
+    rm -rf /var/log/mysql*
+    rm -rf /var/log/mysqld*
+    print_success "日志文件已清理"
+
+    # 8. 清理定时任务
+    print_step "清理定时任务..."
+    sed -i '/mysql/d' /etc/crontab
+    sed -i '/mysqld/d' /etc/crontab
+    sed -i '/mysql_backup/d' /etc/crontab
+    sed -i '/mysql-bin/d' /etc/crontab
+    print_success "定时任务已清理"
+
+    # 9. 清理系统链接
+    print_step "清理系统链接..."
+    rm -f /usr/bin/mysql*
+    rm -f /usr/local/bin/mysql*
+    print_success "系统链接已清理"
+
+    print_success "系统环境清理完成"
+}
+
+# ==============================================
+# MySQL 安装相关函数
+# ==============================================
+# 选择 MySQL 版本
+mysql_install_select_version() {
+    print_debug "PRE-MYSQL_VERSION: $MYSQL_VERSION"
+    print_debug "PRE-MYSQL_SOURCE_URL: $MYSQL_SOURCE_URL"
+    print_debug "PRE-MYSQL_INSTALL_DIR: $MYSQL_INSTALL_DIR"
+    print_debug "PRE-MYSQL_CONF_DIR: $MYSQL_CONF_DIR"
+    print_debug "PRE-MYSQL_LOG_DIR: $MYSQL_LOG_DIR"
+    print_debug "PRE-MYSQL_DATA_DIR: $MYSQL_DATA_DIR"
+    print_debug "PRE-MYSQL_BACKUP_DIR: $MYSQL_BACKUP_DIR"
+    print_debug "PRE-MYSQL_TMP_DIR: $MYSQL_TMP_DIR"
+    print_debug "PRE-MYSQL_BINLOG_DIR: $MYSQL_BINLOG_DIR"
+    print_debug "PRE-MYSQL_SRC_DIR: $MYSQL_SRC_DIR"
+    print_debug "PRE-MYSQL_BOOST_INSTALL_DIR: $MYSQL_BOOST_INSTALL_DIR"
+
+    print_section "选择 MySQL 版本"
+    print_info "请选择要安装的 MySQL 版本："
+    print_info "1) MySQL 5.7.37"
+    print_info "2) MySQL 8.0.24"
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-2]: " choice
+
+    case $choice in
+        1)
+            MYSQL_VERSION="5.7.37"
+            MYSQL_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/mysql/mysql-5.7.37.tar.gz"
+            MYSQL_SRC_DIR="/usr/local/src/mysql-5.7.37"
+            ;;
+        2)
+            MYSQL_VERSION="8.0.24"
+            MYSQL_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/mysql/mysql-8.0.24.tar.gz"
+            MYSQL_SRC_DIR="/usr/local/src/mysql-8.0.24"
+            ;;
+        *)
+            print_error "无效的选择"
+            exit 1
+            ;;
+    esac
+
+    print_success "已选择: MySQL ${MYSQL_VERSION}"
+
+    print_debug "AFTER-MYSQL_VERSION: $MYSQL_VERSION"
+    print_debug "AFTER-MYSQL_SOURCE_URL: $MYSQL_SOURCE_URL"
+    print_debug "AFTER-MYSQL_INSTALL_DIR: $MYSQL_INSTALL_DIR"
+    print_debug "AFTER-MYSQL_CONF_DIR: $MYSQL_CONF_DIR"
+    print_debug "AFTER-MYSQL_LOG_DIR: $MYSQL_LOG_DIR"
+    print_debug "AFTER-MYSQL_DATA_DIR: $MYSQL_DATA_DIR"
+    print_debug "AFTER-MYSQL_BACKUP_DIR: $MYSQL_BACKUP_DIR"
+    print_debug "AFTER-MYSQL_TMP_DIR: $MYSQL_TMP_DIR"
+    print_debug "AFTER-MYSQL_BINLOG_DIR: $MYSQL_BINLOG_DIR"
+    print_debug "AFTER-MYSQL_SRC_DIR: $MYSQL_SRC_DIR"
+    print_debug "AFTER-MYSQL_BOOST_INSTALL_DIR: $MYSQL_BOOST_INSTALL_DIR"
+}
+
+# 创建 MySQL 用户和组
+mysql_install_create_user() {
+    print_section "创建用户和用户组"
+
+    # 创建用户组
+    if ! getent group "$MYSQL_GROUP" > /dev/null; then
+        print_step "创建用户组..."
+        groupadd "$MYSQL_GROUP"
+        print_success "用户组创建完成"
+    fi
+
+    # 创建用户
+    if ! id "$MYSQL_USER" > /dev/null 2>&1; then
+        print_step "创建用户..."
+        useradd -r -g "$MYSQL_GROUP" -d "$MYSQL_DATA_DIR" -s /usr/sbin/nologin "$MYSQL_USER"
+        print_success "用户创建完成"
+    fi
+
+    print_success "用户和用户组创建完成"
+}
+
+# 创建必要的目录
+mysql_install_prepare_directories() {
+    print_section "准备目录结构"
+
+    # 创建标准目录结构
+    print_step "创建必要的目录..."
+    for dir in \
+        "$MYSQL_INSTALL_DIR" \
+        "$MYSQL_CONF_DIR" \
+        "$MYSQL_LOG_DIR" \
+        "$MYSQL_DATA_DIR" \
+        "$MYSQL_BACKUP_DIR" \
+        "$MYSQL_TMP_DIR" \
+        "$MYSQL_BINLOG_DIR" \
+        "$MYSQL_SRC_DIR" \
+        "$MYSQL_PID_DIR"; do
+        if ! mkdir -p "$dir"; then
+            print_error "创建目录失败: $dir"
+            exit 1
+        fi
+        print_success "创建目录: $dir"
+    done
+
+    # 设置基本权限
+    chmod 755 "$MYSQL_INSTALL_DIR"
+    chmod 750 "$MYSQL_CONF_DIR"
+    chmod 750 "$MYSQL_LOG_DIR"
+    chmod 750 "$MYSQL_DATA_DIR"
+    chmod 750 "$MYSQL_BACKUP_DIR"
+    chmod 750 "$MYSQL_TMP_DIR"
+    chmod 750 "$MYSQL_BINLOG_DIR"
+    chmod 750 "$MYSQL_SRC_DIR"
+    chmod 755 "$MYSQL_PID_DIR"
+
+    print_success "目录结构准备完成"
+}
+
+# 分配 MySQL 用户权限
+mysql_install_grant_user() {
+    print_section "分配 MySQL 用户权限"
+
+    # 判断用户组是否存在
+    if ! getent group "$MYSQL_GROUP" > /dev/null; then
+        print_error "用户组不存在: $MYSQL_GROUP"
+        exit 1
+    fi
+
+    # 判断用户是否存在
+    if ! id "$MYSQL_USER" > /dev/null 2>&1; then
+        print_error "用户不存在: $MYSQL_USER"
+        exit 1
+    fi
+
+    # 设置目录权限
+    print_step "设置目录权限..."
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_INSTALL_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_CONF_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_LOG_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_DATA_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_BACKUP_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_TMP_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_BINLOG_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_SRC_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_PID_DIR"
+
+    # 设置权限
+    chmod 755 "$MYSQL_INSTALL_DIR"
+    chmod 750 "$MYSQL_CONF_DIR"
+    chmod 750 "$MYSQL_LOG_DIR"
+    chmod 750 "$MYSQL_DATA_DIR"
+    chmod 750 "$MYSQL_BACKUP_DIR"
+    chmod 750 "$MYSQL_TMP_DIR"
+    chmod 750 "$MYSQL_BINLOG_DIR"
+    chmod 750 "$MYSQL_SRC_DIR"
+    chmod 755 "$MYSQL_PID_DIR"
+
+    print_success "用户和权限配置完成"
+}
+
+# 下载并安装 Boost 库
+mysql_install_download_boost() {
+    print_section "下载 Boost 库"
+    if [ -d "$MYSQL_BOOST_INSTALL_DIR" ]; then
+        print_info "Boost 库已存在，跳过下载"
+        return 0
+    fi
+
+    print_step "创建 Boost 安装目录..."
+    mkdir -p "$MYSQL_BOOST_INSTALL_DIR"
+    cd "$DOWNLOAD_BASE_DIR"
+
+    print_step "下载 Boost 库..."
+    if ! wget -O "boost_${MYSQL_BOOST_VERSION}.tar.gz" "$MYSQL_BOOST_SOURCE_URL" --no-check-certificate; then
+        print_error "下载 Boost 库失败"
+        exit 1
+    fi
+
+    print_step "解压 Boost 库..."
+    if ! tar -zxf "boost_${MYSQL_BOOST_VERSION}.tar.gz" -C "$MYSQL_BOOST_INSTALL_DIR" --strip-components=1; then
+        print_error "解压 Boost 库失败"
+        exit 1
+    fi
+
+    if [ "$(ls -A $MYSQL_BOOST_INSTALL_DIR)" ]; then
+        print_success "Boost 库安装完成"
+    else
+        print_error "Boost 库安装失败，目录为空"
+        exit 1
+    fi
+}
+
+# 下载 MySQL 源码
+mysql_install_download_package() {
+    print_section "下载 MySQL 源码"
+    cd "$DOWNLOAD_BASE_DIR"
+
+    local package_name="mysql-${MYSQL_VERSION}.tar.gz"
+    if [ -f "$package_name" ]; then
+        print_info "MySQL 源码包已存在，跳过下载"
+    else
+        print_step "下载 MySQL 源码包..."
+        if ! wget -O "$package_name" "$MYSQL_SOURCE_URL"; then
+            print_error "下载 MySQL 源码包失败"
+            exit 1
+        fi
+        print_success "下载完成"
+    fi
+
+    print_step "解压源码包..."
+
+    # 解压源码包到指定目录
+    tar -zxf "$package_name" -C /usr/local/
+
+    # 校验解压目录是否存在
+    if [ ! -d "/usr/local/mysql-${MYSQL_VERSION}" ]; then
+        print_error "解压失败，目录不存在"
+        exit 1
+    fi
+
+    # 将解压后的文件复制到源码目录
+    cp -r /usr/local/mysql-${MYSQL_VERSION}/. "$MYSQL_SRC_DIR"
+
+    # 确认复制成功
+    if [ ! -d "$MYSQL_SRC_DIR" ]; then
+        print_error "复制失败，目录不存在"
+        exit 1
+    fi
+
+    # 删除掉源目录
+    rm -rf /usr/local/mysql-${MYSQL_VERSION}
+
+    print_success "解压完成"
+}
+
+# 编译安装 MySQL
+mysql_install_compile() {
+    print_section "编译 MySQL"
+    cd "$MYSQL_SRC_DIR"
+
+    print_step "配置编译参数..."
+    cmake . -DCMAKE_INSTALL_PREFIX="$MYSQL_INSTALL_DIR" \
+        -DMYSQL_DATADIR="$MYSQL_DATA_DIR" \
+        -DSYSCONFDIR="$MYSQL_CONF_DIR" \
+        -DWITH_SSL=system \
+        -DWITH_ZLIB=system \
+        -DDOWNLOAD_BOOST=1 \
+        -DWITH_BOOST="$MYSQL_BOOST_INSTALL_DIR"
+
+    if [ $? -ne 0 ]; then
+        print_error "配置编译参数失败"
+        exit 1
+    fi
+
+    print_step "开始编译..."
+    make -j "$(nproc)"
+    if [ $? -ne 0 ]; then
+        print_error "编译失败"
+        exit 1
+    fi
+
+    print_step "安装到指定目录..."
+    if ! make install; then
+        print_error "安装失败"
+        exit 1
+    fi
+
+    print_success "编译安装完成"
+}
+
+# MySQL 配置文件
+mysql_install_configure_cnf() {
+    print_section "配置 MySQL"
+    print_step "创建配置文件..."
+
+    cat > "$MYSQL_CONF_DIR/my.cnf" <<EOF
+# MySQL 配置文件
+[client]
+port   = 3306
+socket = $MYSQL_DATA_DIR/mysql.sock
+default-character-set = utf8mb4
+host = localhost
+user = root
+password = '$MYSQL_ROOT_PASSWORD'
+
+[mysqld]
+# 基本配置
+default-time-zone = 'SYSTEM'
+log_timestamps=SYSTEM
+port = 3306
+autocommit     = ON
+basedir = $MYSQL_INSTALL_DIR
+datadir = $MYSQL_DATA_DIR
+tmpdir  = $MYSQL_TMP_DIR
+pid-file = /run/mysql/mysql.pid
+socket  = $MYSQL_DATA_DIR/mysql.sock
+lower_case_table_names = 1
+
+# 允许所有 IP 访问
+bind-address = 0.0.0.0
+
+# 存储引擎配置
+default-storage-engine = INNODB
+innodb_file_per_table = 1
+
+# 字符集配置
+character-set-server = utf8mb4
+collation-server = utf8mb4_general_ci
+
+# 日志配置
+general_log = 1
+general_log_file = $MYSQL_LOG_DIR/general.log
+slow_query_log = 1
+slow_query_log_file = $MYSQL_LOG_DIR/slow.log
+log-error = $MYSQL_LOG_DIR/error.log
+long_query_time = 2 # 超过2秒的查询将被记录
+relay_log = /usr/local/mysql-5.7.37/log/relay-log  # Relay Log 配置 (在主从复制时使用)
+
+# 配置唯一的 server-id , 用于主从复制使用
+server-id = 1
+
+# 二进制日志配置
+log-bin = $MYSQL_BINLOG_DIR/mysql-bin
+binlog_format = ROW
+expire_logs_days = 7
+max_binlog_size = 1G
+
+# 其他优化配置
+max_connections = 1000
+open_files_limit = 65535
+table_open_cache = 2048
+max_allowed_packet = 16M
+EOF
+
+    if [ $? -ne 0 ]; then
+        print_error "配置文件创建失败"
+        exit 1
+    fi
+    print_success "配置文件创建完成"
+}
+
+# 设置环境变量
+mysql_install_configure_path() {
+    print_section "设置 MySQL 环境变量"
+
+    ENV_FILE="/etc/profile.d/mysql.sh"
+
+    if [ -f "$ENV_FILE" ]; then
+        BACKUP_FILE="/etc/profile.d/mysql.sh.bak_$(date +%F_%T)"
+        print_step "检测到已有 MySQL 环境变量文件，正在备份..."
+        mv $ENV_FILE $BACKUP_FILE
+        if [ $? -ne 0 ]; then
+            print_error "备份环境变量文件失败"
+            exit 1
+        fi
+        print_success "成功备份环境变量文件"
+    fi
+
+    print_step "创建新的环境变量配置..."
+    cat <<EOF > $ENV_FILE
+# MySQL 环境变量配置
+export MYSQL_HOME=${MYSQL_INSTALL_DIR}
+
+# 确保 PATH 中不会重复添加 MySQL 路径
+if [[ ":\$PATH:" != *":\$MYSQL_HOME/bin:"* ]]; then
+    export PATH=\$PATH:\$MYSQL_HOME/bin
+fi
+EOF
+
+    # 立即生效环境变量
+    source $ENV_FILE
+
+    # 验证环境变量是否生效
+    if ! command -v mysql >/dev/null 2>&1; then
+        print_warning "环境变量可能未生效"
+    fi
+
+    print_success "MySQL 环境变量已设置"
+}
+
+# 设置定时任务
+mysql_install_configure_cron() {
+    print_section "配置定时任务"
+
+    # 创建备份目录
+    if [ ! -d "$MYSQL_BACKUP_DIR" ]; then
+        print_step "创建备份目录..."
+        mkdir -p $MYSQL_BACKUP_DIR
+        chown $MYSQL_USER:$MYSQL_GROUP $MYSQL_BACKUP_DIR
+        print_success "备份目录创建完成"
+    fi
+
+    print_step "配置定时备份任务..."
+    # 备份数据库的定时任务 - 每天凌晨2点备份
+    echo "0 2 * * * /usr/bin/mysqldump -u root -p'$MYSQL_ROOT_PASSWORD' --all-databases > $MYSQL_BACKUP_DIR/mysql_backup_\$(date +\%F).sql" >> /etc/crontab
+
+    print_step "配置日志清理任务..."
+    # 清理超过7天的 binlog 文件 - 每天凌晨3点清理
+    echo "0 3 * * * /usr/bin/find $MYSQL_BINLOG_DIR -name 'mysql-bin.*' -mtime +7 -exec rm {} \;" >> /etc/crontab
+
+    # 重启 cron 服务以应用任务
+    print_step "重启 cron 服务..."
+    sudo systemctl restart crond
+    print_success "定时任务配置完成"
+}
+
+# 开放 3306 端口并检查防火墙状态
+mysql_install_configure_firewall() {
+    print_section "检查并开放 3306 端口"
+
+    print_step "检查防火墙状态..."
+    firewall_status=$(sudo systemctl is-active firewalld)
+
+    if [ "$firewall_status" == "active" ]; then
+        print_info "防火墙已启用，检查 3306 端口..."
+
+        if sudo firewall-cmd --list-ports | grep -q "3306/tcp"; then
+            print_info "3306 端口已开放，无需操作"
+        else
+            print_step "开放 3306 端口..."
+            sudo firewall-cmd --zone=public --add-port=3306/tcp --permanent
+            sudo firewall-cmd --reload
+            if [ $? -eq 0 ]; then
+                print_success "3306 端口已开放"
+            else
+                print_error "无法开放 3306 端口"
+                exit 1
+            fi
+        fi
+    else
+        print_info "防火墙未启用，无需开放端口"
+    fi
+}
+
+# 初始化 MySQL 数据库，使用配置文件
+mysql_install_initialize() {
+    print_section "初始化 MySQL 数据库"
+
+    # 检查安装目录是否存在
+    if [ ! -d "$MYSQL_INSTALL_DIR" ]; then
+        print_error "MySQL 安装目录 $MYSQL_INSTALL_DIR 不存在，无法进行初始化"
+        exit 1
+    fi
+
+    # 检查 mysqld 二进制文件是否存在
+    if [ ! -f "$MYSQL_INSTALL_DIR/bin/mysqld" ]; then
+        print_error "无法找到 $MYSQL_INSTALL_DIR/bin/mysqld 文件，请检查 MySQL 是否正确安装"
+        exit 1
+    fi
+
+    # 检查配置文件是否存在
+    if [ ! -f "$MYSQL_CONF_DIR/my.cnf" ]; then
+        print_error "配置文件 $MYSQL_CONF_DIR/my.cnf 不存在，无法进行初始化"
+        exit 1
+    fi
+
+    # 检查数据目录是否存在
+    if [ ! -d "$MYSQL_DATA_DIR" ]; then
+        print_error "数据目录 $MYSQL_DATA_DIR 不存在，无法进行初始化"
+        exit 1
+    fi
+
+    # 检查数据目录是否为空
+    if [ "$(ls -A $MYSQL_DATA_DIR)" ]; then
+        print_error "数据目录 $MYSQL_DATA_DIR 不为空，无法进行初始化"
+        exit 1
+    fi
+
+    # 检查日志目录是否存在
+    if [ ! -d "$MYSQL_LOG_DIR" ]; then
+        print_error "日志目录 $MYSQL_LOG_DIR 不存在，无法进行初始化"
+        exit 1
+    fi
+
+    # 检查 binlog 目录是否存在
+    if [ ! -d "$MYSQL_BINLOG_DIR" ]; then
+        print_error "binlog 目录 $MYSQL_BINLOG_DIR 不存在，无法进行初始化"
+        exit 1
+    fi
+
+    # 检查 binlog 目录是否为空
+    if [ "$(ls -A $MYSQL_BINLOG_DIR)" ]; then
+        print_error "binlog 目录 $MYSQL_BINLOG_DIR 不为空，无法进行初始化"
+        exit 1
+    fi
+
+    print_step "初始化 MySQL 数据库..."
+    $MYSQL_INSTALL_DIR/bin/mysqld --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=$MYSQL_USER --initialize
+    if [ $? -ne 0 ]; then
+        print_error "MySQL 数据库初始化失败"
+        exit 1
+    fi
+    print_success "MySQL 数据库初始化成功"
+}
+
+# 启动 MySQL
+mysql_install_start_service() {
+    print_section "启动 MySQL 服务"
+    print_step "启动 MySQL 服务..."
+    $MYSQL_INSTALL_DIR/bin/mysqld_safe --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=$MYSQL_USER &
+
+    # 使用更短的间隔检查服务启动状态
+    local max_attempts=10
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        print_step "等待服务启动 ($attempt/$max_attempts)..."
+        if pgrep -x "mysqld" >/dev/null; then
+            print_success "MySQL 服务已启动成功"
+            return 0
+        fi
+        sleep 1
+        ((attempt++))
+    done
+
+    print_error "MySQL 服务启动失败，请检查日志"
+    exit 1
+}
+
+# 设置 root 密码
+mysql_install_set_password() {
+    print_section "设置 root 密码"
+    print_step "检查日志文件..."
+
+    # 定义日志文件路径
+    LOG_FILE="$MYSQL_LOG_DIR/error.log"
+
+    # 检查日志文件是否存在
+    if [ ! -f "$LOG_FILE" ]; then
+        print_error "日志文件 $LOG_FILE 不存在，请检查 MySQL 是否正确启动"
+        exit 1
+    fi
+
+    print_step "查找临时密码..."
+    temp_password=$(grep 'temporary password' $LOG_FILE | awk '{print $NF}')
+
+    if [ -z "$temp_password" ]; then
+        print_error "未找到临时密码。请检查 MySQL 日志文件中的临时密码"
+        exit 1
+    fi
+
+    print_step "设置新密码..."
+    if [[ "$MYSQL_VERSION" =~ 8.0.* ]]; then
+        $MYSQL_INSTALL_DIR/bin/mysql -uroot -p"$temp_password" --connect-expired-password \
+            --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
+    elif [[ "$MYSQL_VERSION" =~ 5.7.* ]]; then
+        $MYSQL_INSTALL_DIR/bin/mysql -uroot -p"$temp_password" --connect-expired-password \
+            --execute="SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$MYSQL_ROOT_PASSWORD');"
+    else
+        print_error "不支持的 MySQL 版本 $MYSQL_VERSION"
+        exit 1
+    fi
+
+    if [ $? -eq 0 ]; then
+        print_success "root 密码已成功设置为 '$MYSQL_ROOT_PASSWORD'"
+    else
+        print_error "设置 root 密码失败"
+        exit 1
+    fi
+}
+
+# 配置 MySQL 开机自启动服务
+mysql_install_autostart_service() {
+    print_section "配置 MySQL 开机自启动服务"
+
+    # 先停止之前手动启动的 MySQL 进程
+    print_step "停止现有 MySQL 进程..."
+    if pgrep -x "mysqld" >/dev/null; then
+        $MYSQL_INSTALL_DIR/bin/mysqladmin --defaults-file=$MYSQL_CONF_DIR/my.cnf -u root -p"$MYSQL_ROOT_PASSWORD" shutdown
+
+        # 使用更短的间隔检查进程停止状态
+        local max_attempts=5
+        local attempt=1
+        while [ $attempt -le $max_attempts ]; do
+            print_step "等待进程停止 ($attempt/$max_attempts)..."
+            if ! pgrep -x "mysqld" >/dev/null; then
+                print_success "MySQL 进程已停止"
+                break
+            fi
+            sleep 1
+            ((attempt++))
+        done
+
+        # 如果正常停止失败，尝试强制终止
+        if [ $attempt -gt $max_attempts ]; then
+            print_warning "MySQL 进程仍在运行，尝试强制终止..."
+            pkill -9 -x "mysqld"
+            pkill -9 -x "mysqld_safe"
+            sleep 1
+        fi
+    fi
+
+    print_step "创建 systemd 服务文件..."
+    cat > /etc/systemd/system/mysql.service <<EOF
+[Unit]
+Description=MySQL Server
+After=network.target
+
+[Service]
+Type=forking
+User=$MYSQL_USER
+Group=$MYSQL_GROUP
+
+# 确保 PID 目录存在
+ExecStartPre=/bin/mkdir -p /run/mysql
+ExecStartPre=/bin/chown -R $MYSQL_USER:$MYSQL_GROUP /run/mysql
+
+# 启动命令
+ExecStart=$MYSQL_INSTALL_DIR/bin/mysqld --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=$MYSQL_USER
+
+# 停止命令
+ExecStop=$MYSQL_INSTALL_DIR/bin/mysqladmin --defaults-file=$MYSQL_CONF_DIR/my.cnf -u root -p"$MYSQL_ROOT_PASSWORD" shutdown
+
+# PID 文件位置
+PIDFile=/run/mysql/mysql.pid
+
+# 确保进程完全启动
+RemainAfterExit=no
+TimeoutStartSec=30
+
+Restart=on-failure
+RestartSec=5
+
+# 资源限制
+LimitNOFILE=65535
+TimeoutSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    print_step "重载 systemd 配置..."
+    systemctl daemon-reload
+
+    print_step "启用并启动 MySQL 服务..."
+    systemctl enable mysql
+
+    # 记录启动尝试次数
+    local start_attempts=0
+    local max_start_attempts=3  # 最多尝试启动3次
+
+    while [ $start_attempts -lt $max_start_attempts ]; do
+        ((start_attempts++))
+        print_step "尝试启动 MySQL 服务 (第 $start_attempts 次)..."
+
+        # 确保没有已经运行的 MySQL 进程
+        if pgrep -x "mysqld" >/dev/null; then
+            print_warning "检测到 MySQL 进程正在运行，尝试停止..."
+            pkill -9 -x "mysqld"
+            pkill -9 -x "mysqld_safe"
+            sleep 2
+        fi
+
+        systemctl start mysql
+
+        # 使用更积极的检查方式
+        local max_attempts=10
+        local attempt=1
+        while [ $attempt -le $max_attempts ]; do
+            print_step "等待服务启动 ($attempt/$max_attempts)..."
+
+            # 检查进程
+            if ! pgrep -x "mysqld" >/dev/null; then
+                sleep 1
+                ((attempt++))
+                continue
+            fi
+
+            # 检查端口
+            if ! netstat -tlnp | grep -q ":3306.*mysqld"; then
+                sleep 1
+                ((attempt++))
+                continue
+            fi
+
+            # 尝试连接
+            if mysqladmin ping >/dev/null 2>&1; then
+                print_success "MySQL 服务已成功启动"
+                return 0
+            fi
+
+            sleep 1
+            ((attempt++))
+        done
+
+        print_warning "第 $start_attempts 次启动尝试失败"
+
+        if [ $start_attempts -lt $max_start_attempts ]; then
+            print_step "等待 5 秒后进行下一次尝试..."
+            sleep 5
+        fi
+    done
+
+    print_error "MySQL 服务启动失败，已尝试 $max_start_attempts 次"
+    print_error "systemctl 状态："
+    systemctl status mysql
+    print_error "journalctl 日志："
+    journalctl -xe --unit=mysql
+    print_error "MySQL 错误日志："
+    tail -n 50 "$MYSQL_LOG_DIR/error.log"
+    exit 1
+}
+
+# 验证 MySQL 安装
+mysql_install_verify() {
+    print_section "验证 MySQL 安装"
+
+    # 1. 检查安装目录和关键文件
+    print_step "检查安装目录和关键文件..."
+    local required_files=(
+        "$MYSQL_INSTALL_DIR/bin/mysql"
+        "$MYSQL_INSTALL_DIR/bin/mysqld"
+        "$MYSQL_INSTALL_DIR/bin/mysqladmin"
+        "$MYSQL_CONF_DIR/my.cnf"
+    )
+
+    for file in "${required_files[@]}"; do
+        if [ ! -f "$file" ]; then
+            print_error "关键文件不存在: $file"
+            exit 1
+        fi
+    done
+    print_success "关键文件检查通过"
+
+    # 2. 检查进程状态
+    print_step "检查 MySQL 进程状态..."
+    if ! pgrep -x "mysqld" >/dev/null; then
+        print_error "MySQL 服务进程未运行"
+        exit 1
+    fi
+
+    # 检查进程数量（避免多实例）
+    local process_count=$(pgrep -x "mysqld" | wc -l)
+    if [ "$process_count" -gt 1 ]; then
+        print_warning "检测到多个 MySQL 实例正在运行"
+    fi
+    print_success "MySQL 进程状态正常"
+
+    # 3. 检查服务状态
+    print_step "检查系统服务状态..."
+    if ! systemctl is-active mysql >/dev/null 2>&1; then
+        print_error "MySQL 系统服务未正常运行"
+        systemctl status mysql
+        exit 1
+    fi
+    if ! systemctl is-enabled mysql >/dev/null 2>&1; then
+        print_error "MySQL 开机自启动未配置"
+        exit 1
+    fi
+    print_success "系统服务状态正常"
+
+    # 4. 检查端口监听
+    print_step "检查端口监听状态..."
+    if ! netstat -tlnp | grep -q ":3306.*mysqld"; then
+        print_error "MySQL 未在 3306 端口监听"
+        exit 1
+    fi
+    print_success "端口监听正常"
+
+    # 5. 检查数据库连接和基本操作
+    print_step "验证数据库连接和基本操作..."
+    local mysql_cmd="mysql -uroot -p'$MYSQL_ROOT_PASSWORD'"
+
+    # 测试连接
+    if ! $mysql_cmd -e "SELECT VERSION();" >/dev/null 2>&1; then
+        print_error "无法连接到 MySQL 服务器"
+        exit 1
+    fi
+
+    # 测试创建数据库
+    if ! $mysql_cmd -e "CREATE DATABASE IF NOT EXISTS test_db;" >/dev/null 2>&1; then
+        print_error "无法创建测试数据库"
+        exit 1
+    fi
+
+    # 测试创建表
+    if ! $mysql_cmd -e "USE test_db; CREATE TABLE IF NOT EXISTS test_table (id INT);" >/dev/null 2>&1; then
+        print_error "无法创建测试表"
+        exit 1
+    fi
+
+    # 测试插入数据
+    if ! $mysql_cmd -e "USE test_db; INSERT INTO test_table VALUES (1);" >/dev/null 2>&1; then
+        print_error "无法插入测试数据"
+        exit 1
+    fi
+
+    # 测试查询数据
+    if ! $mysql_cmd -e "USE test_db; SELECT * FROM test_table;" >/dev/null 2>&1; then
+        print_error "无法查询测试数据"
+        exit 1
+    fi
+
+    # 清理测试数据
+    $mysql_cmd -e "DROP DATABASE test_db;" >/dev/null 2>&1
+    print_success "数据库操作测试通过"
+
+    # 6. 检查日志文件
+    print_step "检查日志文件..."
+    local log_files=(
+        "$MYSQL_LOG_DIR/error.log"
+        "$MYSQL_LOG_DIR/slow.log"
+        "$MYSQL_LOG_DIR/general.log"
+    )
+
+    for log in "${log_files[@]}"; do
+        if [ ! -f "$log" ]; then
+            print_warning "日志文件不存在: $log"
+            continue
+        fi
+        if [ ! -w "$log" ]; then
+            print_error "日志文件权限错误: $log"
+            exit 1
+        fi
+    done
+    print_success "日志文件检查通过"
+
+    # 7. 检查权限设置
+    print_step "检查权限设置..."
+    local dirs=(
+        "$MYSQL_INSTALL_DIR"
+        "$MYSQL_DATA_DIR"
+        "$MYSQL_LOG_DIR"
+        "$MYSQL_CONF_DIR"
+    )
+
+    for dir in "${dirs[@]}"; do
+        if [ ! -d "$dir" ]; then
+            print_error "目录不存在: $dir"
+            exit 1
+        fi
+
+        owner=$(stat -c '%U' "$dir")
+        group=$(stat -c '%G' "$dir")
+
+        if [ "$owner" != "$MYSQL_USER" ] || [ "$group" != "$MYSQL_GROUP" ]; then
+            print_error "目录权限错误: $dir (owner:$owner group:$group)"
+            exit 1
+        fi
+    done
+    print_success "权限设置检查通过"
+
+    print_success "MySQL 安装验证全部通过！"
+}
+
+# 安装完成
+mysql_install_finish() {
+    print_section "完成 MySQL 安装"
+
+    # 清理临时文件
+    print_step "清理临时文件..."
+    rm -rf "$MYSQL_TMP_DIR"/*
+    print_success "临时文件清理完成"
+
+    # 打印安装信息
+    print_info "MySQL 安装信息："
+    print_info "  版本: $MYSQL_VERSION"
+    print_info "  安装目录: $MYSQL_INSTALL_DIR"
+    print_info "  配置文件: $MYSQL_CONF_DIR/my.cnf"
+    print_info "  数据目录: $MYSQL_DATA_DIR"
+    print_info "  日志目录: $MYSQL_LOG_DIR"
+    print_info "  Root 密码: $MYSQL_ROOT_PASSWORD"
+
+    # 打印使用说明
+    print_info "使用说明："
+    print_info "  1. 启动服务: systemctl start mysql"
+    print_info "  2. 停止服务: systemctl stop mysql"
+    print_info "  3. 重启服务: systemctl restart mysql"
+    print_info "  4. 查看状态: systemctl status mysql"
+    print_info "  5. 连接数据库: mysql -uroot -p'$MYSQL_ROOT_PASSWORD'"
+
+    print_success "MySQL 安装完成！"
+}
+
+# MySQL 主安装函数
+mysql_install() {
+    print_section "开始安装 MySQL"
+
+    # 0.卸载旧的 mysql
+    mysql_uninstall
+
+    # 1. 前置检查
+    mysql_common_check_disk
+    mysql_common_check_mem
+    mysql_common_check_dependencies
+    mysql_common_check_processes
+
+    # 2. 清理环境（使用统一的清理函数）
+    mysql_common_cleanup
+
+    # 3. 准备安装环境
+    mysql_install_select_version
+    mysql_install_create_user
+    mysql_install_prepare_directories
+    mysql_install_grant_user
+
+    # 4. 下载和编译
+    mysql_install_download_boost
+    mysql_install_download_package
+    mysql_install_compile
+
+    # 5. 基础配置
+    mysql_install_configure_cnf
+    mysql_install_configure_path
+    mysql_install_configure_cron
+    mysql_install_configure_firewall
+
+    # 6. 初始化和启动
+    mysql_install_initialize
+    mysql_install_start_service
+
+    # 7. 设置 root 密码
+    mysql_install_set_password
+
+    # 8. 配置 MySQL 开机自启动服务
+    mysql_install_autostart_service
+
+    # 9. 验证完成
+    mysql_install_verify
+    mysql_install_finish
+}
+
+# ==============================================
+# MySQL 卸载相关函数
+# ==============================================
 mysql_uninstall() {
-    # MySQL 卸载主函数
-    return 0
+    print_section "开始卸载 MySQL"
+    mysql_common_cleanup
+    print_success "MySQL 已完全卸载！"
 }
 
 
@@ -1933,7 +3218,7 @@ manage_java() {
     print_info "1) 安装 JDK"
     print_info "2) 卸载 JDK"
     print_info "3) 返回主菜单"
-    
+
     read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-3]: " choice
 
     case $choice in
@@ -1950,7 +3235,7 @@ manage_maven() {
     print_info "1) 安装 Maven"
     print_info "2) 卸载 Maven"
     print_info "3) 返回主菜单"
-    
+
     read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-3]: " choice
 
     case $choice in
@@ -1962,26 +3247,51 @@ manage_maven() {
 }
 
 manage_mysql() {
-    print_section "MySQL 管理"
-    # ... MySQL 管理菜单
+    while true; do
+        print_section "MySQL 管理"
+        print_info "请选择操作："
+        print_info "1) 安装 MySQL"
+        print_info "2) 卸载 MySQL"
+        print_info "3) 返回主菜单"
+
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-3]: " choice
+
+        case $choice in
+            1)
+                mysql_install
+                break
+                ;;
+            2)
+                mysql_uninstall
+                break
+                ;;
+            3)
+                return 0
+                ;;
+            *)
+                print_error "无效的选择"
+                continue
+                ;;
+        esac
+    done
 }
 
 # CentOS 软件源更新相关函数
 centos_repo_update() {
     print_section "更新 CentOS 软件源"
-    
+
     # 检查系统版本
     if ! grep -qi "centos" /etc/redhat-release; then
         print_error "当前系统不是 CentOS，无法更新软件源"
         exit 1
     fi
-    
+
     # 备份原有的 repo 文件
     print_step "备份原有软件源配置..."
     sudo mkdir -p /etc/yum.repos.d/backup
     sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
     print_success "原有配置已备份到 /etc/yum.repos.d/backup/"
-    
+
     # 下载新的 repo 文件
     print_step "下载阿里云 CentOS 软件源配置..."
     if ! curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo; then
@@ -1989,7 +3299,7 @@ centos_repo_update() {
         exit 1
     fi
     print_success "CentOS Base 源配置完成"
-    
+
     # 添加 EPEL 源
     print_step "下载阿里云 EPEL 源配置..."
     if ! curl -o /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo; then
@@ -2011,14 +3321,14 @@ centos_repo_update() {
         print_error "软件源验证失败"
         exit 1
     fi
-    
+
     print_success "CentOS 软件源已成功更新为阿里云镜像！"
 }
 
 # 添加系统依赖检查函数
 check_system_dependencies() {
     print_section "检查系统依赖"
-    
+
     # 检查 root 权限
     if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
         print_error "此脚本需要 root 权限或 sudo 命令"
@@ -2070,7 +3380,7 @@ check_system_dependencies() {
     done
 
     print_success "所有系统依赖检查完成"
-    
+
     # 直接返回主菜单
     select_software
 }
@@ -2086,7 +3396,7 @@ select_software() {
     print_info "5) Redis"
     print_info "6) MySQL"
     print_info "7) 退出"
-    
+
     read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-7]: " software_choice
 
     case $software_choice in
@@ -2096,7 +3406,7 @@ select_software() {
         4) manage_maven ;;
         5) manage_redis ;;
         6) manage_mysql ;;
-        7) 
+        7)
             print_info "感谢使用，再见！"
             exit 0
             ;;
@@ -2118,4 +3428,4 @@ main() {
 }
 
 # 执行主函数
-main 
+main
