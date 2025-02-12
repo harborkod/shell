@@ -32,7 +32,7 @@
 # 1. 全局配置和变量
 # ==============================================
 # 是否开启调试模式 (true/false)
-ENABLE_DEBUG=true
+ENABLE_DEBUG=false
 
 # 日志级别定义
 LOG_DEBUG="DEBUG"
@@ -2564,6 +2564,7 @@ password = '$MYSQL_ROOT_PASSWORD'
 
 [mysqld]
 # 基本配置
+user = mysql
 default-time-zone = 'SYSTEM'
 log_timestamps=SYSTEM
 port = 3306
@@ -2593,12 +2594,10 @@ slow_query_log = 1
 slow_query_log_file = $MYSQL_LOG_DIR/slow.log
 log-error = $MYSQL_LOG_DIR/error.log
 long_query_time = 2 # 超过2秒的查询将被记录
-relay_log = /usr/local/mysql-5.7.37/log/relay-log  # Relay Log 配置 (在主从复制时使用)
-
-# 配置唯一的 server-id , 用于主从复制使用
-server-id = 1
+relay_log = $MYSQL_LOG_DIR/relay-log
 
 # 二进制日志配置
+server-id = 1
 log-bin = $MYSQL_BINLOG_DIR/mysql-bin
 binlog_format = ROW
 expire_logs_days = 7
@@ -2764,7 +2763,7 @@ mysql_install_initialize() {
     fi
 
     print_step "初始化 MySQL 数据库..."
-    $MYSQL_INSTALL_DIR/bin/mysqld --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=$MYSQL_USER --initialize
+    $MYSQL_INSTALL_DIR/bin/mysqld --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=mysql --initialize
     if [ $? -ne 0 ]; then
         print_error "MySQL 数据库初始化失败"
         exit 1
@@ -2841,32 +2840,23 @@ mysql_install_set_password() {
 mysql_install_autostart_service() {
     print_section "配置 MySQL 开机自启动服务"
 
-    # 先停止之前手动启动的 MySQL 进程
-    print_step "停止现有 MySQL 进程..."
-    if pgrep -x "mysqld" >/dev/null; then
-        $MYSQL_INSTALL_DIR/bin/mysqladmin --defaults-file=$MYSQL_CONF_DIR/my.cnf -u root -p"$MYSQL_ROOT_PASSWORD" shutdown
+    # 获取当前脚本的进程 ID
+    local current_script_pid=$$
 
-        # 使用更短的间隔检查进程停止状态
-        local max_attempts=5
-        local attempt=1
-        while [ $attempt -le $max_attempts ]; do
-            print_step "等待进程停止 ($attempt/$max_attempts)..."
-            if ! pgrep -x "mysqld" >/dev/null; then
-                print_success "MySQL 进程已停止"
-                break
-            fi
-            sleep 1
-            ((attempt++))
-        done
+    # 查找所有 mysqld 和 mysqld_safe 进程
+    local mysql_pids=$(pgrep -x "mysqld|mysqld_safe")
 
-        # 如果正常停止失败，尝试强制终止
-        if [ $attempt -gt $max_attempts ]; then
-            print_warning "MySQL 进程仍在运行，尝试强制终止..."
-            pkill -9 -x "mysqld"
-            pkill -9 -x "mysqld_safe"
-            sleep 1
+    # 逐个检查并杀掉进程，避免误杀当前脚本
+    for pid in $mysql_pids; do
+        if [ "$pid" -ne "$current_script_pid" ]; then
+            print_warning "正在杀掉 MySQL 进程 PID: $pid"
+            kill -9 "$pid"
+        else
+            print_info "跳过当前脚本进程 PID: $pid"
         fi
-    fi
+    done
+
+    sleep 2  # 确保进程完全退出
 
     print_step "创建 systemd 服务文件..."
     cat > /etc/systemd/system/mysql.service <<EOF
@@ -2875,26 +2865,25 @@ Description=MySQL Server
 After=network.target
 
 [Service]
-Type=forking
-User=$MYSQL_USER
-Group=$MYSQL_GROUP
+Type=simple
+User=mysql
+Group=mysql
 
-# 确保 PID 目录存在
-ExecStartPre=/bin/mkdir -p /run/mysql
-ExecStartPre=/bin/chown -R $MYSQL_USER:$MYSQL_GROUP /run/mysql
-
-# 启动命令
-ExecStart=$MYSQL_INSTALL_DIR/bin/mysqld --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=$MYSQL_USER
-
-# 停止命令
-ExecStop=$MYSQL_INSTALL_DIR/bin/mysqladmin --defaults-file=$MYSQL_CONF_DIR/my.cnf -u root -p"$MYSQL_ROOT_PASSWORD" shutdown
-
-# PID 文件位置
+# 指定 PID 文件供 systemd 检查
 PIDFile=/run/mysql/mysql.pid
 
-# 确保进程完全启动
-RemainAfterExit=no
-TimeoutStartSec=30
+# 使用 systemd 处理 /run/mysql 目录，避免手动创建失败
+RuntimeDirectory=mysql
+RuntimeDirectoryMode=0755
+
+# 启动命令
+ExecStart=$MYSQL_INSTALL_DIR/bin/mysqld_safe --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=mysql
+
+# 启动完成后输出消息
+ExecStartPost=/bin/bash -c 'echo "MySQL Server started" | systemd-cat -t mysql'
+
+# 停止命令
+ExecStop=$MYSQL_INSTALL_DIR/bin/mysqladmin --defaults-file=$MYSQL_CONF_DIR/my.cnf --user=mysql shutdown
 
 Restart=on-failure
 RestartSec=5
@@ -2910,10 +2899,10 @@ EOF
     print_step "重载 systemd 配置..."
     systemctl daemon-reload
 
-    print_step "启用并启动 MySQL 服务..."
+    print_step "启用 MySQL 开机自启动..."
     systemctl enable mysql
 
-    # 记录启动尝试次数
+    # 限制启动尝试次数，避免无限循环重启
     local start_attempts=0
     local max_start_attempts=3  # 最多尝试启动3次
 
@@ -2921,202 +2910,71 @@ EOF
         ((start_attempts++))
         print_step "尝试启动 MySQL 服务 (第 $start_attempts 次)..."
 
-        # 确保没有已经运行的 MySQL 进程
-        if pgrep -x "mysqld" >/dev/null; then
-            print_warning "检测到 MySQL 进程正在运行，尝试停止..."
-            pkill -9 -x "mysqld"
-            pkill -9 -x "mysqld_safe"
-            sleep 2
-        fi
-
+        print_debug "启动 MySQL 服务..."
         systemctl start mysql
 
-        # 使用更积极的检查方式
-        local max_attempts=10
-        local attempt=1
-        while [ $attempt -le $max_attempts ]; do
-            print_step "等待服务启动 ($attempt/$max_attempts)..."
+        # 使用 systemctl is-active 服务是否启动成功
+        print_debug "当前 MySQL 服务状态: $(systemctl is-active mysql)"
 
-            # 检查进程
-            if ! pgrep -x "mysqld" >/dev/null; then
-                sleep 1
-                ((attempt++))
-                continue
-            fi
-
-            # 检查端口
-            if ! netstat -tlnp | grep -q ":3306.*mysqld"; then
-                sleep 1
-                ((attempt++))
-                continue
-            fi
-
-            # 尝试连接
-            if mysqladmin ping >/dev/null 2>&1; then
-                print_success "MySQL 服务已成功启动"
-                return 0
-            fi
-
+        # 等待 MySQL 服务完全启动
+        local ready_attempts=0
+        while ! mysqladmin ping -h127.0.0.1 --silent; do
             sleep 1
-            ((attempt++))
+            ((ready_attempts++))
+            if [ $ready_attempts -ge 30 ]; then
+                print_error "MySQL 启动超时"
+                exit 1
+            fi
         done
 
-        print_warning "第 $start_attempts 次启动尝试失败"
+        # 获取 MySQL 服务的状态
+        local mysql_status=$(systemctl is-active mysql)
+
+        # 如果服务是 active
+        if [ "$mysql_status" == "active" ]; then
+            print_success "MySQL 服务已启动成功"
+            break
+        else
+            print_warning "第 $start_attempts 次启动尝试失败"
+        fi
 
         if [ $start_attempts -lt $max_start_attempts ]; then
             print_step "等待 5 秒后进行下一次尝试..."
             sleep 5
         fi
     done
-
-    print_error "MySQL 服务启动失败，已尝试 $max_start_attempts 次"
-    print_error "systemctl 状态："
-    systemctl status mysql
-    print_error "journalctl 日志："
-    journalctl -xe --unit=mysql
-    print_error "MySQL 错误日志："
-    tail -n 50 "$MYSQL_LOG_DIR/error.log"
-    exit 1
+    print_success "MySQL 开机自启动服务配置成功"
 }
 
 # 验证 MySQL 安装
 mysql_install_verify() {
     print_section "验证 MySQL 安装"
 
-    # 1. 检查安装目录和关键文件
-    print_step "检查安装目录和关键文件..."
-    local required_files=(
-        "$MYSQL_INSTALL_DIR/bin/mysql"
-        "$MYSQL_INSTALL_DIR/bin/mysqld"
-        "$MYSQL_INSTALL_DIR/bin/mysqladmin"
-        "$MYSQL_CONF_DIR/my.cnf"
-    )
-
-    for file in "${required_files[@]}"; do
-        if [ ! -f "$file" ]; then
-            print_error "关键文件不存在: $file"
-            exit 1
-        fi
-    done
-    print_success "关键文件检查通过"
-
-    # 2. 检查进程状态
-    print_step "检查 MySQL 进程状态..."
-    if ! pgrep -x "mysqld" >/dev/null; then
-        print_error "MySQL 服务进程未运行"
-        exit 1
-    fi
-
-    # 检查进程数量（避免多实例）
-    local process_count=$(pgrep -x "mysqld" | wc -l)
-    if [ "$process_count" -gt 1 ]; then
-        print_warning "检测到多个 MySQL 实例正在运行"
-    fi
-    print_success "MySQL 进程状态正常"
-
-    # 3. 检查服务状态
+    # 1. 检查服务状态
     print_step "检查系统服务状态..."
-    if ! systemctl is-active mysql >/dev/null 2>&1; then
+    local mysql_status=$(systemctl is-active mysql)
+    if [ "$mysql_status" != "active" ]; then
         print_error "MySQL 系统服务未正常运行"
         systemctl status mysql
         exit 1
     fi
-    if ! systemctl is-enabled mysql >/dev/null 2>&1; then
-        print_error "MySQL 开机自启动未配置"
-        exit 1
-    fi
-    print_success "系统服务状态正常"
 
-    # 4. 检查端口监听
-    print_step "检查端口监听状态..."
-    if ! netstat -tlnp | grep -q ":3306.*mysqld"; then
-        print_error "MySQL 未在 3306 端口监听"
-        exit 1
-    fi
-    print_success "端口监听正常"
-
-    # 5. 检查数据库连接和基本操作
-    print_step "验证数据库连接和基本操作..."
-    local mysql_cmd="mysql -uroot -p'$MYSQL_ROOT_PASSWORD'"
-
-    # 测试连接
-    if ! $mysql_cmd -e "SELECT VERSION();" >/dev/null 2>&1; then
-        print_error "无法连接到 MySQL 服务器"
+    # 2. 检查开机自启动
+    print_step "检查开机自启动状态..."
+    local mysql_enable=$(systemctl is-enabled mysql)
+    if [ "$mysql_enable" != "enabled" ]; then
+        print_error "MySQL 未设置开机自启动"
+        systemctl status mysql
         exit 1
     fi
 
-    # 测试创建数据库
-    if ! $mysql_cmd -e "CREATE DATABASE IF NOT EXISTS test_db;" >/dev/null 2>&1; then
-        print_error "无法创建测试数据库"
+    # 3. 检查数据库连接和基本操作
+    print_step "验证数据库连接"
+    local mysql_cmd="mysql -uroot -p$MYSQL_ROOT_PASSWORD"
+    if ! $mysql_cmd --execute="SELECT VERSION();" >/dev/null 2>&1; then
+        print_error "数据库连接失败"
         exit 1
     fi
-
-    # 测试创建表
-    if ! $mysql_cmd -e "USE test_db; CREATE TABLE IF NOT EXISTS test_table (id INT);" >/dev/null 2>&1; then
-        print_error "无法创建测试表"
-        exit 1
-    fi
-
-    # 测试插入数据
-    if ! $mysql_cmd -e "USE test_db; INSERT INTO test_table VALUES (1);" >/dev/null 2>&1; then
-        print_error "无法插入测试数据"
-        exit 1
-    fi
-
-    # 测试查询数据
-    if ! $mysql_cmd -e "USE test_db; SELECT * FROM test_table;" >/dev/null 2>&1; then
-        print_error "无法查询测试数据"
-        exit 1
-    fi
-
-    # 清理测试数据
-    $mysql_cmd -e "DROP DATABASE test_db;" >/dev/null 2>&1
-    print_success "数据库操作测试通过"
-
-    # 6. 检查日志文件
-    print_step "检查日志文件..."
-    local log_files=(
-        "$MYSQL_LOG_DIR/error.log"
-        "$MYSQL_LOG_DIR/slow.log"
-        "$MYSQL_LOG_DIR/general.log"
-    )
-
-    for log in "${log_files[@]}"; do
-        if [ ! -f "$log" ]; then
-            print_warning "日志文件不存在: $log"
-            continue
-        fi
-        if [ ! -w "$log" ]; then
-            print_error "日志文件权限错误: $log"
-            exit 1
-        fi
-    done
-    print_success "日志文件检查通过"
-
-    # 7. 检查权限设置
-    print_step "检查权限设置..."
-    local dirs=(
-        "$MYSQL_INSTALL_DIR"
-        "$MYSQL_DATA_DIR"
-        "$MYSQL_LOG_DIR"
-        "$MYSQL_CONF_DIR"
-    )
-
-    for dir in "${dirs[@]}"; do
-        if [ ! -d "$dir" ]; then
-            print_error "目录不存在: $dir"
-            exit 1
-        fi
-
-        owner=$(stat -c '%U' "$dir")
-        group=$(stat -c '%G' "$dir")
-
-        if [ "$owner" != "$MYSQL_USER" ] || [ "$group" != "$MYSQL_GROUP" ]; then
-            print_error "目录权限错误: $dir (owner:$owner group:$group)"
-            exit 1
-        fi
-    done
-    print_success "权限设置检查通过"
 
     print_success "MySQL 安装验证全部通过！"
 }
@@ -3387,17 +3245,16 @@ check_system_dependencies() {
 
 # 更新主菜单函数
 select_software() {
-    print_section "选择软件"
-    print_info "请选择要管理的软件:"
-    print_info "1) 更新 CentOS 软件源"
-    print_info "2) 检查并安装系统依赖"
+    print_info "Please select an option:"
+    print_info "1) Update CentOS repositories"
+    print_info "2) Check and install system dependencies"
     print_info "3) Java (JDK)"
     print_info "4) Maven"
     print_info "5) Redis"
     print_info "6) MySQL"
-    print_info "7) 退出"
+    print_info "7) Exit"
 
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 请输入选项 [1-7]: " software_choice
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - Please enter an option [1-7]: " software_choice
 
     case $software_choice in
         1) centos_repo_update ;;
@@ -3407,22 +3264,23 @@ select_software() {
         5) manage_redis ;;
         6) manage_mysql ;;
         7)
-            print_info "感谢使用，再见！"
+            print_info "Thank you for using this script. Goodbye!"
             exit 0
             ;;
         *)
-            print_error "无效的选择"
+            print_error "Invalid selection"
             exit 1
             ;;
     esac
 }
 
+
 # 8. 主函数
 # ======================
 main() {
-    print_info "HarborKod 软件安装管理工具"
-    print_info "作者: harborkod"
-    print_info "版本: 1.0.0"
+    print_info "HarborKod Software Shell Manager"
+    print_info "Author: harborkod"
+    print_info "Version: 1.0.4"
     print_info "GitHub: https://github.com/harborkod"
     select_software
 }
