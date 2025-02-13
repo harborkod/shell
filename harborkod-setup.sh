@@ -105,6 +105,7 @@ MYSQL_INSTALL_DIR="/usr/local/mysql"                # 程序安装目录
 MYSQL_CONF_DIR="/etc/mysql"                         # 配置文件目录
 MYSQL_LOG_DIR="/var/log/mysql"                      # 日志目录
 MYSQL_BINLOG_DIR="/var/log/mysql/binlog"            # 二进制日志目录
+MYSQL_RELAYLOG_DIR="/var/log/mysql/relaylog"        # 中继日志目录
 MYSQL_DATA_DIR="/var/lib/mysql"                     # 数据目录
 MYSQL_BACKUP_DIR="/var/backup/mysql"                # 备份目录
 MYSQL_TMP_DIR="/var/tmp/mysql"                      # 临时文件目录
@@ -2196,6 +2197,7 @@ mysql_common_cleanup() {
         "$MYSQL_BACKUP_DIR"       # 备份目录
         "$MYSQL_TMP_DIR"          # 临时目录
         "$MYSQL_BINLOG_DIR"       # 二进制日志目录
+        "$MYSQL_RELAYLOG_DIR"     # 中继日志目录
         "$MYSQL_SRC_DIR"          # 源码目录
         "$MYSQL_PID_DIR"          # pid目录
         "$MYSQL_BOOST_INSTALL_DIR"      # Boost库目录
@@ -2372,6 +2374,7 @@ mysql_install_prepare_directories() {
         "$MYSQL_BACKUP_DIR" \
         "$MYSQL_TMP_DIR" \
         "$MYSQL_BINLOG_DIR" \
+        "$MYSQL_RELAYLOG_DIR" \
         "$MYSQL_SRC_DIR" \
         "$MYSQL_PID_DIR"; do
         if ! mkdir -p "$dir"; then
@@ -2389,6 +2392,7 @@ mysql_install_prepare_directories() {
     chmod 750 "$MYSQL_BACKUP_DIR"
     chmod 750 "$MYSQL_TMP_DIR"
     chmod 750 "$MYSQL_BINLOG_DIR"
+    chmod 750 "$MYSQL_RELAYLOG_DIR"
     chmod 750 "$MYSQL_SRC_DIR"
     chmod 755 "$MYSQL_PID_DIR"
 
@@ -2420,6 +2424,7 @@ mysql_install_grant_user() {
     chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_BACKUP_DIR"
     chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_TMP_DIR"
     chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_BINLOG_DIR"
+    chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_RELAYLOG_DIR"
     chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_SRC_DIR"
     chown -R "$MYSQL_USER:$MYSQL_GROUP" "$MYSQL_PID_DIR"
 
@@ -2431,6 +2436,7 @@ mysql_install_grant_user() {
     chmod 750 "$MYSQL_BACKUP_DIR"
     chmod 750 "$MYSQL_TMP_DIR"
     chmod 750 "$MYSQL_BINLOG_DIR"
+    chmod 750 "$MYSQL_RELAYLOG_DIR"
     chmod 750 "$MYSQL_SRC_DIR"
     chmod 755 "$MYSQL_PID_DIR"
 
@@ -2553,14 +2559,19 @@ mysql_install_configure_cnf() {
     print_step "创建配置文件..."
 
     cat > "$MYSQL_CONF_DIR/my.cnf" <<EOF
-# MySQL 配置文件
 [client]
 port   = 3306
 socket = $MYSQL_DATA_DIR/mysql.sock
 default-character-set = utf8mb4
+
+
+[mysql]
 host = localhost
+default-character-set = utf8mb4
 user = root
 password = '$MYSQL_ROOT_PASSWORD'
+auto-vertical-output
+
 
 [mysqld]
 # 基本配置
@@ -2588,26 +2599,41 @@ character-set-server = utf8mb4
 collation-server = utf8mb4_general_ci
 
 # 日志配置
+log-error = $MYSQL_LOG_DIR/error.log
+long_query_time = 2
+
+# general_log 日志配置
 general_log = 1
 general_log_file = $MYSQL_LOG_DIR/general.log
-slow_query_log = 1
-slow_query_log_file = $MYSQL_LOG_DIR/slow.log
-log-error = $MYSQL_LOG_DIR/error.log
-long_query_time = 2 # 超过2秒的查询将被记录
-relay_log = $MYSQL_LOG_DIR/relay-log
 
-# 二进制日志配置
+# slow_query_log 日志配置
+slow_query_log = 1
+log_queries_not_using_indexes = 1
+slow_query_log_file = $MYSQL_LOG_DIR/slow.log
+
+# binlog 日志配置
 server-id = 1
-log-bin = $MYSQL_BINLOG_DIR/mysql-bin
 binlog_format = ROW
 expire_logs_days = 7
 max_binlog_size = 1G
+log-bin = $MYSQL_BINLOG_DIR/mysql-bin
+
+# relay_log 日志配置
+relay_log = $MYSQL_RELAYLOG_DIR/mysql-relay-bin
+relay_log_index = $MYSQL_RELAYLOG_DIR/mysql-relay-bin.index
+relay_log_info_file = $MYSQL_RELAYLOG_DIR/relay-log.info
 
 # 其他优化配置
 max_connections = 1000
 open_files_limit = 65535
 table_open_cache = 2048
 max_allowed_packet = 16M
+
+
+[mysqldump]
+quick
+single-transaction
+
 EOF
 
     if [ $? -ne 0 ]; then
