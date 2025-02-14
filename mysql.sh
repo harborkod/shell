@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 引入日志函数
-source ./harborkod-setup.sh
+source harborkod.sh
 
 # ==============================================
 # MySQL 相关变量

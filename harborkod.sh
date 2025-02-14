@@ -2631,6 +2631,10 @@ max_allowed_packet = 16M
 
 
 [mysqldump]
+host = localhost
+user = root
+password = '$MYSQL_ROOT_PASSWORD'
+default-character-set = utf8mb4
 quick
 single-transaction
 
@@ -2694,15 +2698,16 @@ mysql_install_configure_cron() {
         print_success "备份目录创建完成"
     fi
 
-    print_step "配置定时备份任务..."
-    # 备份数据库的定时任务 - 每天凌晨2点备份
-    echo "0 2 * * * /usr/bin/mysqldump -u root -p'$MYSQL_ROOT_PASSWORD' --all-databases > $MYSQL_BACKUP_DIR/mysql_backup_\$(date +\%F).sql" >> /etc/crontab
+    CRON_FILE="/etc/cron.d/mysql_backup"
 
-    print_step "配置日志清理任务..."
-    # 清理超过7天的 binlog 文件 - 每天凌晨3点清理
-    echo "0 3 * * * /usr/bin/find $MYSQL_BINLOG_DIR -name 'mysql-bin.*' -mtime +7 -exec rm {} \;" >> /etc/crontab
+    cat > $CRON_FILE <<EOF
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root
 
-    # 重启 cron 服务以应用任务
+0 2 * * * root $MYSQL_INSTALL_DIR/bin/mysqldump --defaults-extra-file=$MYSQL_CONF_DIR/my.cnf --all-databases > $MYSQL_BACKUP_DIR/mysql_backup_\$(date +\%F).sql
+EOF
+
     print_step "重启 cron 服务..."
     sudo systemctl restart crond
     print_success "定时任务配置完成"
