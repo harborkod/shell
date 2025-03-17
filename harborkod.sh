@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# ==============================================
 # HarborKod 软件安装管理工具
 # 作者: harborkod
 # 版本: 1.0.0
@@ -117,7 +116,6 @@ MYSQL_BOOST_VERSION="1_59_0"
 MYSQL_BOOST_SOURCE_URL="https://harborkod.oss-rg-china-mainland.aliyuncs.com/arch/mysql/boost_1_59_0.tar.gz"
 MYSQL_BOOST_INSTALL_DIR="/usr/local/boost"
 
-# ==============================================
 # ZOOKEEPER 相关变量
 # ==============================================
 ZOOKEEPER_VERSION="3.7.1"
@@ -158,14 +156,45 @@ KAFKA_PID_DIR="/run/kafka"                          # PID文件目录
 # 安全配置
 KAFKA_ENABLE_AUTH=true                              # 是否启用认证
 KAFKA_ADMIN_USER="admin"                            # 管理员用户
-KAFKA_ADMIN_PASSWORD="harborKod@kafka@admin"        # 管理员密码
+KAFKA_ADMIN_PASSWORD="harborKod@kafka@admin"
 
 
 
 
 
+# 2. 日志函数
 # ==============================================
-# 日志输出函数
+# 如果开启了调试模式，打印初始环境信息
+if [ "$ENABLE_DEBUG" = "true" ]; then
+    print_debug "脚本开始执行"
+    print_debug "调试模式已开启"
+    print_debug "PATH: $PATH"
+    print_debug "JAVA_HOME: $JAVA_HOME"
+    print_debug "当前目录: $(pwd)"
+fi
+
+get_string_width() {
+    local input="$1"
+    local width=0
+    local char
+
+    for (( i=0; i<${#input}; i++ )); do
+        char="${input:$i:1}"
+        if [[ "$char" =~ [[:print:]] ]]; then
+            if [[ "$char" =~ [\x80-\xff] ]]; then
+                # 中文字符占用 2 个宽度
+                width=$((width + 2))
+                # 跳过中文字符的第二个字节
+                i=$((i + 2))
+            else
+                # ASCII 字符占用 1 个宽度
+                width=$((width + 1))
+            fi
+        fi
+    done
+    echo "$width"
+}
+
 print_log() {
     local level="$1"
     local message="$2"
@@ -192,7 +221,6 @@ print_log() {
     esac
 }
 
-# 各种日志级别的快捷函数
 print_debug() {
     local message="$1"
     print_log "$LOG_DEBUG" "$message"
@@ -218,25 +246,11 @@ print_success() {
     print_log "$LOG_SUCCESS" "$message"
 }
 
-# 步骤提示函数
 print_step() {
     local message="$1"
     print_info "执行步骤: $message"
 }
 
-# 如果开启了调试模式，打印初始环境信息
-if [ "$ENABLE_DEBUG" = "true" ]; then
-    print_debug "脚本开始执行"
-    print_debug "调试模式已开启"
-    print_debug "PATH: $PATH"
-    print_debug "JAVA_HOME: $JAVA_HOME"
-    print_debug "当前目录: $(pwd)"
-fi
-
-
-# 2. 通用函数
-# ======================
-# 日志和输出相关函数
 print_header() {
     local total_width=60  # 与 print_section 保持一致的宽度
 
@@ -247,29 +261,6 @@ print_header() {
     printf "%*s%s%*s\n" 24 "" "版本: 1.0.0" 24 ""
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${NC}"
     echo ""
-}
-
-# 计算字符串显示宽度的函数
-get_string_width() {
-    local input="$1"
-    local width=0
-    local char
-
-    for (( i=0; i<${#input}; i++ )); do
-        char="${input:$i:1}"
-        if [[ "$char" =~ [[:print:]] ]]; then
-            if [[ "$char" =~ [\x80-\xff] ]]; then
-                # 中文字符占用 2 个宽度
-                width=$((width + 2))
-                # 跳过中文字符的第二个字节
-                i=$((i + 2))
-            else
-                # ASCII 字符占用 1 个宽度
-                width=$((width + 1))
-            fi
-        fi
-    done
-    echo "$width"
 }
 
 print_section() {
@@ -286,10 +277,260 @@ print_section() {
 }
 
 
-# 3. JDK 相关函数
-# ======================
 
-# JDK 通用函数
+# 3. CentOS 软件源更新相关函数
+# ======================
+centos_repo_update() {
+    print_section "更新 CentOS 软件源"
+
+    # 检查系统版本
+    if ! grep -qi "centos" /etc/redhat-release; then
+        print_error "当前系统不是 CentOS，无法更新软件源"
+        exit 1
+    fi
+
+    # 备份原有的 repo 文件
+    print_step "备份原有软件源配置..."
+    sudo mkdir -p /etc/yum.repos.d/backup
+    sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
+    print_success "原有配置已备份到 /etc/yum.repos.d/backup/"
+
+    # 下载新的 repo 文件
+    print_step "下载阿里云 CentOS 软件源配置..."
+    if ! curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo; then
+        print_error "下载 CentOS-Base.repo 失败"
+        exit 1
+    fi
+    print_success "CentOS Base 源配置完成"
+
+    # 添加 EPEL 源
+    print_step "下载阿里云 EPEL 源配置..."
+    if ! curl -o /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo; then
+        print_error "下载 epel.repo 失败"
+        exit 1
+    fi
+    print_success "EPEL 源配置完成"
+
+    # 清除缓存并更新
+    print_step "清理并更新软件源缓存..."
+    yum clean all
+    rm -rf /var/cache/yum/*
+    yum makecache
+    print_success "软件源缓存已更新"
+
+    # 验证源是否可用
+    print_step "验证软件源可用性..."
+    if ! yum repolist | grep -E "base|extras|updates|epel" > /dev/null; then
+        print_error "软件源验证失败"
+        exit 1
+    fi
+
+    print_success "CentOS 软件源已成功更新为阿里云镜像！"
+}
+
+
+
+# 4. 添加系统依赖检查函数
+# ======================
+check_system_dependencies() {
+    print_section "检查系统依赖"
+
+    # 检查 root 权限
+    if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
+        print_error "此脚本需要 root 权限或 sudo 命令"
+        exit 1
+    fi
+
+    # 定义依赖项及其对应的包名
+    declare -A dependencies=(
+        ["wget"]="wget"
+        ["tar"]="tar"
+        ["gcc"]="gcc"
+        ["g++"]="gcc-c++"
+        ["make"]="make"
+        ["cmake"]="cmake"
+        ["bison"]="bison"
+        ["perl"]="perl"
+        ["git"]="git"
+        ["curl"]="curl"
+        ["vim"]="vim"
+        ["unzip"]="unzip"
+        ["net-tools"]="net-tools"
+        ["telnet"]="telnet"
+    )
+
+    # 检查每个依赖
+    for cmd in "${!dependencies[@]}"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            print_warning "未检测到 $cmd 命令，正在安装..."
+            if command -v yum >/dev/null 2>&1; then
+                sudo yum install -y "${dependencies[$cmd]}"
+            elif command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y "${dependencies[$cmd]}"
+            elif command -v dnf >/dev/null 2>&1; then
+                sudo dnf install -y "${dependencies[$cmd]}"
+            else
+                print_error "无法找到包管理器（yum/apt-get/dnf），请手动安装 ${dependencies[$cmd]}"
+                exit 1
+            fi
+            if [ $? -eq 0 ]; then
+                print_success "${dependencies[$cmd]} 安装完成"
+            else
+                print_error "${dependencies[$cmd]} 安装失败"
+                exit 1
+            fi
+        else
+            print_success "$cmd 已安装"
+        fi
+    done
+
+    print_success "所有系统依赖检查完成"
+
+    # 直接返回主菜单
+    select_software
+}
+
+
+
+# 5. JDK 相关函数
+# ======================
+jdk_uninstall_remove_alternatives() {
+    print_section "清理 Alternatives 配置"
+    print_step "清理 alternatives 配置..."
+
+    if command -v update-alternatives >/dev/null 2>&1; then
+        ALTERNATIVES_CMD="update-alternatives"
+    elif command -v alternatives >/dev/null 2>&1; then
+        ALTERNATIVES_CMD="alternatives"
+    else
+        print_warning "未找到 alternatives 命令，跳过清理"
+        return
+    fi
+
+    if [ -n "$ALTERNATIVES_CMD" ]; then
+        for cmd in java javac jar jps; do
+            if $ALTERNATIVES_CMD --display $cmd >/dev/null 2>&1; then
+                $ALTERNATIVES_CMD --display $cmd | grep "alternative" | grep -v "status" | while read -r line; do
+                    path=$(echo "$line" | awk '{print $1}')
+                    if [ -n "$path" ] && [ -f "$path" ]; then
+                        sudo $ALTERNATIVES_CMD --remove $cmd "$path" 2>/dev/null
+                    fi
+                done
+                print_success "$cmd alternatives 已清理"
+            fi
+        done
+    fi
+}
+
+jdk_uninstall_remove_env_files() {
+    print_section "清理环境变量配置"
+    print_step "清理环境变量文件..."
+
+    for env_file in /etc/profile.d/java_*.sh; do
+        if [ -f "$env_file" ]; then
+            sudo rm -f "$env_file"
+            print_success "已删除环境变量文件: $env_file"
+        fi
+    done
+}
+
+jdk_uninstall_remove_installation() {
+    print_section "清理安装目录"
+    print_step "清理 JDK 安装目录..."
+
+    local java_dirs=("/usr/local/jdk*" "/usr/local/java*" "/usr/local/openjdk*")
+    for dir_pattern in "${java_dirs[@]}"; do
+        for dir in $dir_pattern; do
+            if [ -d "$dir" ]; then
+                sudo rm -rf "$dir"
+                print_success "已删除目录: $dir"
+            fi
+        done
+    done
+}
+
+jdk_uninstall_remove_downloads() {
+    print_section "清理下载文件"
+    print_step "清理 JDK 安装包..."
+
+    for file in /opt/jdk*.tar.gz /opt/openjdk*.tar.gz; do
+        if [ -f "$file" ]; then
+            sudo rm -f "$file"
+            print_success "已删除文件: $file"
+        fi
+    done
+}
+
+jdk_uninstall_cleanup_env_vars() {
+    print_section "清理环境变量"
+    print_step "清理当前会话的环境变量..."
+
+    unset JAVA_HOME
+    jdk_common_cleanup_path
+    print_success "当前会话的环境变量已清理"
+}
+
+jdk_uninstall_remove_system_jdk() {
+    print_section "清理系统 JDK"
+    if command -v java >/dev/null 2>&1 && java -version 2>&1 | grep -i "openjdk" >/dev/null; then
+        print_step "清理系统 OpenJDK..."
+        if command -v yum >/dev/null 2>&1; then
+            sudo yum remove -y java-* java-*-openjdk-* java-*-openjdk-headless
+        elif command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get remove -y openjdk* java*
+            sudo apt-get autoremove -y
+        fi
+        print_success "系统 OpenJDK 已清理"
+    fi
+}
+
+jdk_uninstall_remove_symlinks() {
+    print_section "清理符号链接"
+    print_step "清理 Java 相关符号链接..."
+
+    local links=("/usr/bin/java" "/usr/bin/javac" "/usr/bin/jar" "/usr/bin/jps")
+    for link in "${links[@]}"; do
+        if [ -L "$link" ]; then
+            sudo rm -f "$link"
+            print_success "已删除链接: $link"
+        fi
+    done
+}
+
+jdk_uninstall_finish() {
+    print_section "卸载完成"
+    print_success "JDK 卸载完成"
+    echo ""
+    print_warning "请执行以下命令使环境变量生效:"
+    echo "    source /etc/profile"
+    echo ""
+    print_info "如需重新安装 JDK，请重新运行此脚本"
+}
+
+jdk_uninstall() {
+    print_section "卸载 JDK"
+
+    print_warning "此操作将完全删除 JDK 及其配置"
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
+
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        print_info "取消卸载"
+        return 0
+    fi
+
+    print_info "开始清理 Java 进程..."
+    jdk_common_check_processes
+
+    print_info "开始清理 alternatives 配置..."
+    jdk_uninstall_remove_alternatives
+
+    print_info "开始清理环境变量..."
+    jdk_uninstall_remove_env_files
+
+    print_info "卸载完成"
+}
+
 jdk_common_cleanup_path() {
     # 保存原始 IFS
     local OIFS="$IFS"
@@ -361,7 +602,6 @@ jdk_common_check_processes() {
     fi
 }
 
-# JDK 安装相关函数
 jdk_install_check_existing() {
     print_section "检查现有 JDK 安装"
     if command -v java >/dev/null 2>&1; then
@@ -768,151 +1008,11 @@ jdk_install() {
     jdk_install_finish
 }
 
-# JDK 卸载相关函数
-jdk_uninstall_remove_alternatives() {
-    print_section "清理 Alternatives 配置"
-    print_step "清理 alternatives 配置..."
-
-    if command -v update-alternatives >/dev/null 2>&1; then
-        ALTERNATIVES_CMD="update-alternatives"
-    elif command -v alternatives >/dev/null 2>&1; then
-        ALTERNATIVES_CMD="alternatives"
-    else
-        print_warning "未找到 alternatives 命令，跳过清理"
-        return
-    fi
-
-    if [ -n "$ALTERNATIVES_CMD" ]; then
-        for cmd in java javac jar jps; do
-            if $ALTERNATIVES_CMD --display $cmd >/dev/null 2>&1; then
-                $ALTERNATIVES_CMD --display $cmd | grep "alternative" | grep -v "status" | while read -r line; do
-                    path=$(echo "$line" | awk '{print $1}')
-                    if [ -n "$path" ] && [ -f "$path" ]; then
-                        sudo $ALTERNATIVES_CMD --remove $cmd "$path" 2>/dev/null
-                    fi
-                done
-                print_success "$cmd alternatives 已清理"
-            fi
-        done
-    fi
-}
-
-jdk_uninstall_remove_env_files() {
-    print_section "清理环境变量配置"
-    print_step "清理环境变量文件..."
-
-    for env_file in /etc/profile.d/java_*.sh; do
-        if [ -f "$env_file" ]; then
-            sudo rm -f "$env_file"
-            print_success "已删除环境变量文件: $env_file"
-        fi
-    done
-}
-
-jdk_uninstall_remove_installation() {
-    print_section "清理安装目录"
-    print_step "清理 JDK 安装目录..."
-
-    local java_dirs=("/usr/local/jdk*" "/usr/local/java*" "/usr/local/openjdk*")
-    for dir_pattern in "${java_dirs[@]}"; do
-        for dir in $dir_pattern; do
-            if [ -d "$dir" ]; then
-                sudo rm -rf "$dir"
-                print_success "已删除目录: $dir"
-            fi
-        done
-    done
-}
-
-jdk_uninstall_remove_downloads() {
-    print_section "清理下载文件"
-    print_step "清理 JDK 安装包..."
-
-    for file in /opt/jdk*.tar.gz /opt/openjdk*.tar.gz; do
-        if [ -f "$file" ]; then
-            sudo rm -f "$file"
-            print_success "已删除文件: $file"
-        fi
-    done
-}
-
-jdk_uninstall_cleanup_env_vars() {
-    print_section "清理环境变量"
-    print_step "清理当前会话的环境变量..."
-
-    unset JAVA_HOME
-    jdk_common_cleanup_path
-    print_success "当前会话的环境变量已清理"
-}
-
-jdk_uninstall_remove_system_jdk() {
-    print_section "清理系统 JDK"
-    if command -v java >/dev/null 2>&1 && java -version 2>&1 | grep -i "openjdk" >/dev/null; then
-        print_step "清理系统 OpenJDK..."
-        if command -v yum >/dev/null 2>&1; then
-            sudo yum remove -y java-* java-*-openjdk-* java-*-openjdk-headless
-        elif command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get remove -y openjdk* java*
-            sudo apt-get autoremove -y
-        fi
-        print_success "系统 OpenJDK 已清理"
-    fi
-}
-
-jdk_uninstall_remove_symlinks() {
-    print_section "清理符号链接"
-    print_step "清理 Java 相关符号链接..."
-
-    local links=("/usr/bin/java" "/usr/bin/javac" "/usr/bin/jar" "/usr/bin/jps")
-    for link in "${links[@]}"; do
-        if [ -L "$link" ]; then
-            sudo rm -f "$link"
-            print_success "已删除链接: $link"
-        fi
-    done
-}
-
-jdk_uninstall_finish() {
-    print_section "卸载完成"
-    print_success "JDK 卸载完成"
-    echo ""
-    print_warning "请执行以下命令使环境变量生效:"
-    echo "    source /etc/profile"
-    echo ""
-    print_info "如需重新安装 JDK，请重新运行此脚本"
-}
-
-# 主卸载函数
-jdk_uninstall() {
-    print_section "卸载 JDK"
-
-    print_warning "此操作将完全删除 JDK 及其配置"
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
-
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        print_info "取消卸载"
-        return 0
-    fi
-
-    print_info "开始清理 Java 进程..."
-    jdk_common_check_processes
-
-    print_info "开始清理 alternatives 配置..."
-    jdk_uninstall_remove_alternatives
-
-    print_info "开始清理环境变量..."
-    jdk_uninstall_remove_env_files
-
-    print_info "卸载完成"
-}
 
 
 
-
-# 4. Maven 相关函数
+# 6. Maven 相关函数
 # ======================
-
-# Maven 通用函数
 mvn_common_cleanup_path() {
     # 保存原始 IFS
     local OIFS="$IFS"
@@ -985,7 +1085,95 @@ mvn_common_check_processes() {
     fi
 }
 
-# Maven 安装相关函数
+mvn_uninstall_remove_env_files() {
+    print_section "清理环境变量配置"
+    print_step "清理环境变量文件..."
+
+    for env_file in /etc/profile.d/maven_*.sh; do
+        if [ -f "$env_file" ]; then
+            sudo rm -f "$env_file"
+            print_success "已删除环境变量文件: $env_file"
+        fi
+    done
+}
+
+mvn_uninstall_remove_installation() {
+    print_section "清理安装目录"
+    print_step "清理 Maven 安装目录..."
+
+    local maven_dirs=("/usr/local/apache-maven*")
+    for dir_pattern in "${maven_dirs[@]}"; do
+        for dir in $dir_pattern; do
+            if [ -d "$dir" ]; then
+                sudo rm -rf "$dir"
+                print_success "已删除目录: $dir"
+            fi
+        done
+    done
+}
+
+mvn_uninstall_remove_downloads() {
+    print_section "清理下载文件"
+    print_step "清理 Maven 安装包..."
+
+    for file in /opt/apache-maven*.tar.gz; do
+        if [ -f "$file" ]; then
+            sudo rm -f "$file"
+            print_success "已删除文件: $file"
+        fi
+    done
+}
+
+mvn_uninstall_cleanup_env_vars() {
+    print_section "清理环境变量"
+    print_step "清理当前会话的环境变量..."
+
+    unset MAVEN_HOME
+    mvn_common_cleanup_path
+    print_success "当前会话的环境变量已清理"
+}
+
+mvn_uninstall_finish() {
+    print_section "卸载完成"
+    print_success "Maven 卸载完成"
+    print_warning "请执行以下命令使环境变量生效:"
+    print_info "source /etc/profile"
+}
+
+mvn_uninstall() {
+    print_section "卸载 Maven"
+
+    print_warning "此操作将完全删除 Maven 及其配置"
+    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
+
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        print_info "取消卸载"
+        return 0
+    fi
+
+    print_info "开始清理 Maven 进程..."
+    mvn_common_check_processes
+
+    # 清理本地仓库
+    if [ -d "$MVN_LOCAL_REPO" ]; then
+        print_warning "检测到 Maven 本地仓库: $MVN_LOCAL_REPO"
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除本地仓库？(y/n): " remove_repo
+        if [ "$remove_repo" = "y" ] || [ "$remove_repo" = "Y" ]; then
+            rm -rf "$MVN_LOCAL_REPO"
+            print_success "已删除本地仓库"
+        else
+            print_info "保留本地仓库"
+        fi
+    fi
+
+    print_info "开始清理环境变量..."
+    mvn_uninstall_remove_env_files
+    mvn_uninstall_remove_installation
+    mvn_uninstall_remove_downloads
+    mvn_uninstall_cleanup_env_vars
+    mvn_uninstall_finish
+}
+
 mvn_install_check_existing() {
     print_section "检查现有 Maven 安装"
     if command -v mvn >/dev/null 2>&1; then
@@ -1378,104 +1566,11 @@ mvn_install() {
     mvn_install_finish
 }
 
-# Maven 卸载相关函数
-mvn_uninstall_remove_env_files() {
-    print_section "清理环境变量配置"
-    print_step "清理环境变量文件..."
-
-    for env_file in /etc/profile.d/maven_*.sh; do
-        if [ -f "$env_file" ]; then
-            sudo rm -f "$env_file"
-            print_success "已删除环境变量文件: $env_file"
-        fi
-    done
-}
-
-mvn_uninstall_remove_installation() {
-    print_section "清理安装目录"
-    print_step "清理 Maven 安装目录..."
-
-    local maven_dirs=("/usr/local/apache-maven*")
-    for dir_pattern in "${maven_dirs[@]}"; do
-        for dir in $dir_pattern; do
-            if [ -d "$dir" ]; then
-                sudo rm -rf "$dir"
-                print_success "已删除目录: $dir"
-            fi
-        done
-    done
-}
-
-mvn_uninstall_remove_downloads() {
-    print_section "清理下载文件"
-    print_step "清理 Maven 安装包..."
-
-    for file in /opt/apache-maven*.tar.gz; do
-        if [ -f "$file" ]; then
-            sudo rm -f "$file"
-            print_success "已删除文件: $file"
-        fi
-    done
-}
-
-mvn_uninstall_cleanup_env_vars() {
-    print_section "清理环境变量"
-    print_step "清理当前会话的环境变量..."
-
-    unset MAVEN_HOME
-    mvn_common_cleanup_path
-    print_success "当前会话的环境变量已清理"
-}
-
-mvn_uninstall_finish() {
-    print_section "卸载完成"
-    print_success "Maven 卸载完成"
-    print_warning "请执行以下命令使环境变量生效:"
-    print_info "source /etc/profile"
-}
-
-# 主卸载函数
-mvn_uninstall() {
-    print_section "卸载 Maven"
-
-    print_warning "此操作将完全删除 Maven 及其配置"
-    read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
-
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        print_info "取消卸载"
-        return 0
-    fi
-
-    print_info "开始清理 Maven 进程..."
-    mvn_common_check_processes
-
-    # 清理本地仓库
-    if [ -d "$MVN_LOCAL_REPO" ]; then
-        print_warning "检测到 Maven 本地仓库: $MVN_LOCAL_REPO"
-        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除本地仓库？(y/n): " remove_repo
-        if [ "$remove_repo" = "y" ] || [ "$remove_repo" = "Y" ]; then
-            rm -rf "$MVN_LOCAL_REPO"
-            print_success "已删除本地仓库"
-        else
-            print_info "保留本地仓库"
-        fi
-    fi
-
-    print_info "开始清理环境变量..."
-    mvn_uninstall_remove_env_files
-    mvn_uninstall_remove_installation
-    mvn_uninstall_remove_downloads
-    mvn_uninstall_cleanup_env_vars
-    mvn_uninstall_finish
-}
 
 
 
-
-# 5. Redis 相关函数
+# 7. Redis 相关函数
 # ======================
-
-# Redis 通用函数
 redis_common_check_dependencies() {
     print_section "检查 Redis 安装依赖"
 
@@ -1526,7 +1621,136 @@ redis_common_check_processes() {
     fi
 }
 
-# Redis 安装相关函数
+redis_uninstall_stop_service() {
+    print_section "停止 Redis 服务"
+
+    print_step "停止 Redis 服务..."
+    if systemctl is-active redis >/dev/null 2>&1; then
+        systemctl stop redis
+        print_success "Redis 服务已停止"
+    fi
+
+    print_step "禁用 Redis 服务..."
+    if systemctl is-enabled redis >/dev/null 2>&1; then
+        systemctl disable redis
+        print_success "Redis 服务已禁用"
+    fi
+
+    print_step "删除服务文件..."
+    if [ -f "/etc/systemd/system/redis.service" ]; then
+        rm -f "/etc/systemd/system/redis.service"
+        print_success "服务文件已删除"
+    fi
+
+    # 新增：完全清理 systemd 状态
+    print_step "清理 systemd 状态..."
+    systemctl daemon-reload
+    systemctl reset-failed redis
+    print_success "systemd 状态已清理"
+}
+
+redis_uninstall_remove_files() {
+    print_section "删除 Redis 文件"
+
+    # 获取静默模式参数
+    local is_silent=${1:-false}
+
+    # 删除标准目录结构
+    local dirs=(
+        "$REDIS_INSTALL_DIR"
+        "$REDIS_CONF_DIR"
+        "$REDIS_SRC_DIR"
+    )
+
+    for dir in "${dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            print_step "删除目录: $dir..."
+            rm -rf "$dir"
+            print_success "目录已删除: $dir"
+        fi
+    done
+
+    # 数据和日志目录需要确认
+    if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ]; then
+        if [ "$is_silent" = "true" ]; then
+            # 静默模式下直接删除
+            rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR"
+        else
+            print_warning "检测到数据、日志目录"
+            read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除这些目录？(y/n): " remove_data
+            if [ "$remove_data" = "y" ] || [ "$remove_data" = "Y" ]; then
+                rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR"
+                print_success "数据、日志目录已删除"
+            else
+                print_info "保留数据、日志目录"
+            fi
+        fi
+    fi
+}
+
+redis_uninstall_remove_env_files() {
+    print_section "清理环境变量配置"
+    print_step "清理环境变量文件..."
+
+    if [ -f "/etc/profile.d/redis.sh" ]; then
+        rm -f "/etc/profile.d/redis.sh"
+        print_success "环境变量文件已删除"
+    fi
+
+    # 清理当前会话的环境变量
+    unset REDIS_HOME
+    # 清理 PATH 中的 Redis 路径
+    export PATH=$(echo $PATH | tr ':' '\n' | grep -v "redis" | tr '\n' ':' | sed 's/:$//')
+
+    print_success "环境变量已清理"
+}
+
+redis_uninstall_remove_user() {
+    print_section "删除 Redis 用户"
+
+    if id "$REDIS_USER" >/dev/null 2>&1; then
+        print_step "删除用户..."
+        userdel "$REDIS_USER"
+        print_success "用户已删除"
+    fi
+
+    if getent group "$REDIS_GROUP" >/dev/null; then
+        print_step "删除用户组..."
+        groupdel "$REDIS_GROUP"
+        print_success "用户组已删除"
+    fi
+}
+
+redis_uninstall_finish() {
+    print_section "卸载完成"
+    print_success "Redis 已完全卸载"
+    print_info "如需重新安装，请重新运行此脚本"
+}
+
+redis_uninstall() {
+    print_section "卸载 Redis"
+
+    # 如果是通过安装函数调用的，则静默执行
+    local is_silent=${1:-false}
+
+    if [ "$is_silent" = "false" ]; then
+        print_warning "此操作将完全删除 Redis 及其配置"
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
+
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            print_info "取消卸载"
+            return 0
+        fi
+    fi
+
+    redis_common_check_processes
+    redis_uninstall_stop_service
+    redis_uninstall_remove_files "$is_silent"  # 传递静默参数
+    redis_uninstall_remove_env_files
+    redis_uninstall_remove_user
+    redis_uninstall_finish
+}
+
 redis_install_cleanup_previous() {
     print_section "清理历史数据"
 
@@ -1812,7 +2036,6 @@ redis_install_finish() {
     print_info "  状态: systemctl status redis"
 }
 
-# Redis 主安装函数
 redis_install() {
     print_debug "开始 Redis 安装流程"
     start_time=$(date +%s)
@@ -1835,154 +2058,11 @@ redis_install() {
     redis_install_finish
 }
 
-# Redis 卸载相关函数
-redis_uninstall_stop_service() {
-    print_section "停止 Redis 服务"
-
-    print_step "停止 Redis 服务..."
-    if systemctl is-active redis >/dev/null 2>&1; then
-        systemctl stop redis
-        print_success "Redis 服务已停止"
-    fi
-
-    print_step "禁用 Redis 服务..."
-    if systemctl is-enabled redis >/dev/null 2>&1; then
-        systemctl disable redis
-        print_success "Redis 服务已禁用"
-    fi
-
-    print_step "删除服务文件..."
-    if [ -f "/etc/systemd/system/redis.service" ]; then
-        rm -f "/etc/systemd/system/redis.service"
-        print_success "服务文件已删除"
-    fi
-
-    # 新增：完全清理 systemd 状态
-    print_step "清理 systemd 状态..."
-    systemctl daemon-reload
-    systemctl reset-failed redis
-    print_success "systemd 状态已清理"
-}
-
-redis_uninstall_remove_files() {
-    print_section "删除 Redis 文件"
-
-    # 获取静默模式参数
-    local is_silent=${1:-false}
-
-    # 删除标准目录结构
-    local dirs=(
-        "$REDIS_INSTALL_DIR"
-        "$REDIS_CONF_DIR"
-        "$REDIS_SRC_DIR"
-    )
-
-    for dir in "${dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            print_step "删除目录: $dir..."
-            rm -rf "$dir"
-            print_success "目录已删除: $dir"
-        fi
-    done
-
-    # 数据和日志目录需要确认
-    if [ -d "$REDIS_DATA_DIR" ] || [ -d "$REDIS_LOG_DIR" ]; then
-        if [ "$is_silent" = "true" ]; then
-            # 静默模式下直接删除
-            rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR"
-        else
-            print_warning "检测到数据、日志目录"
-            read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否删除这些目录？(y/n): " remove_data
-            if [ "$remove_data" = "y" ] || [ "$remove_data" = "Y" ]; then
-                rm -rf "$REDIS_DATA_DIR" "$REDIS_LOG_DIR"
-                print_success "数据、日志目录已删除"
-            else
-                print_info "保留数据、日志目录"
-            fi
-        fi
-    fi
-}
-
-redis_uninstall_remove_env_files() {
-    print_section "清理环境变量配置"
-    print_step "清理环境变量文件..."
-
-    if [ -f "/etc/profile.d/redis.sh" ]; then
-        rm -f "/etc/profile.d/redis.sh"
-        print_success "环境变量文件已删除"
-    fi
-
-    # 清理当前会话的环境变量
-    unset REDIS_HOME
-    # 清理 PATH 中的 Redis 路径
-    export PATH=$(echo $PATH | tr ':' '\n' | grep -v "redis" | tr '\n' ':' | sed 's/:$//')
-
-    print_success "环境变量已清理"
-}
-
-redis_uninstall_remove_user() {
-    print_section "删除 Redis 用户"
-
-    if id "$REDIS_USER" >/dev/null 2>&1; then
-        print_step "删除用户..."
-        userdel "$REDIS_USER"
-        print_success "用户已删除"
-    fi
-
-    if getent group "$REDIS_GROUP" >/dev/null; then
-        print_step "删除用户组..."
-        groupdel "$REDIS_GROUP"
-        print_success "用户组已删除"
-    fi
-}
-
-redis_uninstall_finish() {
-    print_section "卸载完成"
-    print_success "Redis 已完全卸载"
-    print_info "如需重新安装，请重新运行此脚本"
-}
-
-# Redis 主卸载函数
-redis_uninstall() {
-    print_section "卸载 Redis"
-
-    # 如果是通过安装函数调用的，则静默执行
-    local is_silent=${1:-false}
-
-    if [ "$is_silent" = "false" ]; then
-        print_warning "此操作将完全删除 Redis 及其配置"
-        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 确定要继续吗？(y/n): " confirm
-
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-            print_info "取消卸载"
-            return 0
-        fi
-    fi
-
-    redis_common_check_processes
-    redis_uninstall_stop_service
-    redis_uninstall_remove_files "$is_silent"  # 传递静默参数
-    redis_uninstall_remove_env_files
-    redis_uninstall_remove_user
-    redis_uninstall_finish
-}
 
 
 
-
-# 6. MySQL 相关函数
+# 8. MySQL 相关函数
 # ======================
-
-# MySQL 通用函数
-
-
-# MySQL 安装主函数
-
-# ==============================================
-# MySQL 通用函数
-# ==============================================
-
-# 检查磁盘空间
 mysql_common_check_disk() {
     AVAILABLE_SPACE=$(df /usr/local | tail -1 | awk '{print $4}')
     if [ "$AVAILABLE_SPACE" -lt 5000000 ]; then
@@ -1991,7 +2071,6 @@ mysql_common_check_disk() {
     fi
 }
 
-# 检查内存空间
 mysql_common_check_mem() {
     TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
     AVAILABLE_MEM=$(free -m | awk '/^Mem:/{print $7}')
@@ -2013,7 +2092,6 @@ mysql_common_check_mem() {
     fi
 }
 
-# 检查并安装 MySQL 依赖
 mysql_common_check_dependencies() {
     print_section "检查 MySQL 安装依赖"
 
@@ -2169,7 +2247,6 @@ mysql_common_check_dependencies() {
     fi
 }
 
-# 检查 MySQL 进程
 mysql_common_check_processes() {
     print_section "检查 MySQL 进程"
     print_step "检查是否有正在运行的 MySQL 进程..."
@@ -2188,7 +2265,6 @@ mysql_common_check_processes() {
     fi
 }
 
-# 清理原有的配置及环境
 mysql_common_cleanup() {
     print_section "清理系统环境"
 
@@ -2307,10 +2383,12 @@ mysql_common_cleanup() {
     print_success "系统环境清理完成"
 }
 
-# ==============================================
-# MySQL 安装相关函数
-# ==============================================
-# 选择 MySQL 版本
+mysql_uninstall() {
+    print_section "开始卸载 MySQL"
+    mysql_common_cleanup
+    print_success "MySQL 已完全卸载！"
+}
+
 mysql_install_select_version() {
     print_debug "PRE-MYSQL_VERSION: $MYSQL_VERSION"
     print_debug "PRE-MYSQL_SOURCE_URL: $MYSQL_SOURCE_URL"
@@ -2362,7 +2440,6 @@ mysql_install_select_version() {
     print_debug "AFTER-MYSQL_BOOST_INSTALL_DIR: $MYSQL_BOOST_INSTALL_DIR"
 }
 
-# 创建 MySQL 用户和组
 mysql_install_create_user() {
     print_section "创建用户和用户组"
 
@@ -2383,7 +2460,6 @@ mysql_install_create_user() {
     print_success "用户和用户组创建完成"
 }
 
-# 创建必要的目录
 mysql_install_prepare_directories() {
     print_section "准备目录结构"
 
@@ -2422,7 +2498,6 @@ mysql_install_prepare_directories() {
     print_success "目录结构准备完成"
 }
 
-# 分配 MySQL 用户权限
 mysql_install_grant_user() {
     print_section "分配 MySQL 用户权限"
 
@@ -2466,7 +2541,6 @@ mysql_install_grant_user() {
     print_success "用户和权限配置完成"
 }
 
-# 下载并安装 Boost 库
 mysql_install_download_boost() {
     print_section "下载 Boost 库"
     if [ -d "$MYSQL_BOOST_INSTALL_DIR" ]; then
@@ -2498,7 +2572,6 @@ mysql_install_download_boost() {
     fi
 }
 
-# 下载 MySQL 源码
 mysql_install_download_package() {
     print_section "下载 MySQL 源码"
     cd "$DOWNLOAD_BASE_DIR"
@@ -2541,7 +2614,6 @@ mysql_install_download_package() {
     print_success "解压完成"
 }
 
-# 编译安装 MySQL
 mysql_install_compile() {
     print_section "编译 MySQL"
     cd "$MYSQL_SRC_DIR"
@@ -2576,7 +2648,6 @@ mysql_install_compile() {
     print_success "编译安装完成"
 }
 
-# MySQL 配置文件
 mysql_install_configure_cnf() {
     print_section "配置 MySQL"
     print_step "创建配置文件..."
@@ -2670,7 +2741,6 @@ EOF
     print_success "配置文件创建完成"
 }
 
-# 设置环境变量
 mysql_install_configure_path() {
     print_section "设置 MySQL 环境变量"
 
@@ -2709,7 +2779,6 @@ EOF
     print_success "MySQL 环境变量已设置"
 }
 
-# 设置定时任务
 mysql_install_configure_cron() {
     print_section "配置定时任务"
 
@@ -2736,7 +2805,6 @@ EOF
     print_success "定时任务配置完成"
 }
 
-# 开放 3306 端口并检查防火墙状态
 mysql_install_configure_firewall() {
     print_section "检查并开放 3306 端口"
 
@@ -2764,7 +2832,6 @@ mysql_install_configure_firewall() {
     fi
 }
 
-# 初始化 MySQL 数据库，使用配置文件
 mysql_install_initialize() {
     print_section "初始化 MySQL 数据库"
 
@@ -2825,7 +2892,6 @@ mysql_install_initialize() {
     print_success "MySQL 数据库初始化成功"
 }
 
-# 启动 MySQL
 mysql_install_start_service() {
     print_section "启动 MySQL 服务"
     print_step "启动 MySQL 服务..."
@@ -2848,7 +2914,6 @@ mysql_install_start_service() {
     exit 1
 }
 
-# 设置 root 密码
 mysql_install_set_password() {
     print_section "设置 root 密码"
     print_step "检查日志文件..."
@@ -2890,7 +2955,6 @@ mysql_install_set_password() {
     fi
 }
 
-# 配置 MySQL 开机自启动服务
 mysql_install_autostart_service() {
     print_section "配置 MySQL 开机自启动服务"
 
@@ -3000,7 +3064,6 @@ EOF
     print_success "MySQL 开机自启动服务配置成功"
 }
 
-# 验证 MySQL 安装
 mysql_install_verify() {
     print_section "验证 MySQL 安装"
 
@@ -3033,7 +3096,6 @@ mysql_install_verify() {
     print_success "MySQL 安装验证全部通过！"
 }
 
-# 安装完成
 mysql_install_finish() {
     print_section "完成 MySQL 安装"
 
@@ -3062,7 +3124,6 @@ mysql_install_finish() {
     print_success "MySQL 安装完成！"
 }
 
-# MySQL 主安装函数
 mysql_install() {
     print_section "开始安装 MySQL"
 
@@ -3110,21 +3171,11 @@ mysql_install() {
     mysql_install_finish
 }
 
-# ==============================================
-# MySQL 卸载相关函数
-# ==============================================
-mysql_uninstall() {
-    print_section "开始卸载 MySQL"
-    mysql_common_cleanup
-    print_success "MySQL 已完全卸载！"
-}
 
 
-# ==============================================
-# 7. ZooKeeper 相关函数
-# ==============================================
 
-# ZooKeeper 通用函数
+# 9. ZooKeeper 相关函数
+# ==============================================
 zookeeper_common_check_dependencies() {
     print_section "检查 ZooKeeper 安装依赖"
 
@@ -3195,637 +3246,6 @@ zookeeper_common_check_processes() {
     else
         print_info "未检测到运行中的 ZooKeeper 进程"
     fi
-}
-
-zookeeper_install_cleanup_previous() {
-    print_section "清理历史数据"
-    
-    # 停止可能运行的 ZooKeeper 服务
-    if systemctl is-active zookeeper >/dev/null 2>&1; then
-        print_step "停止 ZooKeeper 服务..."
-        systemctl stop zookeeper
-        systemctl disable zookeeper
-        print_success "ZooKeeper 服务已停止并禁用"
-    fi
-    
-    # 删除旧的 ZooKeeper 安装
-    if [ -d "$ZOOKEEPER_INSTALL_DIR" ]; then
-        print_step "删除旧的 ZooKeeper 安装目录..."
-        rm -rf "$ZOOKEEPER_INSTALL_DIR"
-        print_success "旧的安装目录已删除"
-    fi
-    
-    # 删除其他目录和文件
-    local dirs=("$ZOOKEEPER_CONF_DIR" "$ZOOKEEPER_DATA_DIR" "$ZOOKEEPER_LOG_DIR" "$ZOOKEEPER_PID_DIR")
-    for dir in "${dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            print_step "删除目录: $dir"
-            rm -rf "$dir"
-            print_success "目录已删除: $dir"
-        fi
-    done
-
-    # 删除 systemd 服务文件
-    if [ -f "/etc/systemd/system/zookeeper.service" ]; then
-        print_step "删除 systemd 服务文件..."
-        rm -f "/etc/systemd/system/zookeeper.service"
-        systemctl daemon-reload
-        print_success "服务文件已删除"
-    fi
-    
-    # 删除环境变量文件
-    if [ -f "/etc/profile.d/zookeeper.sh" ]; then
-        print_step "删除环境变量文件..."
-        rm -f "/etc/profile.d/zookeeper.sh"
-        print_success "环境变量文件已删除"
-    fi
-    
-    # 清理临时下载文件
-    print_step "清理临时下载文件..."
-    rm -f "/opt/apache-zookeeper-*.tar.gz"
-    print_success "临时文件清理完成"
-}
-
-zookeeper_install_download_package() {
-    print_section "下载 ZooKeeper 安装包"
-    
-    local download_dir="/opt"
-    local package_name="apache-zookeeper-${ZOOKEEPER_VERSION}-bin.tar.gz"
-    local download_path="${download_dir}/${package_name}"
-    
-    print_step "检查下载目录..."
-    if [ ! -d "$download_dir" ]; then
-        mkdir -p "$download_dir"
-    fi
-    
-    # 如果已经存在下载文件，询问是否重新下载
-    if [ -f "$download_path" ]; then
-        print_warning "发现已下载的 ZooKeeper 安装包"
-        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否重新下载? (y/n): " redownload
-        if [ "$redownload" = "y" ] || [ "$redownload" = "Y" ]; then
-            rm -f "$download_path"
-        else
-            print_info "使用已下载的安装包"
-            return 0
-        fi
-    fi
-    
-    print_step "开始下载 ZooKeeper ${ZOOKEEPER_VERSION}..."
-    if ! wget --no-check-certificate \
-            --progress=bar:force \
-            -O "$download_path" \
-            "$ZOOKEEPER_SOURCE_URL"; then
-        print_error "下载失败，请检查网络连接和下载地址"
-        exit 1
-    fi
-    
-    # 验证下载是否成功
-    if [ ! -f "$download_path" ]; then
-        print_error "下载文件不存在"
-        exit 1
-    fi
-    
-    if [ "$(stat -c%s "$download_path")" -lt 1000000 ]; then
-        print_error "下载的文件大小异常，可能不是有效的安装包"
-        exit 1
-    fi
-    
-    print_success "ZooKeeper 安装包下载完成: $download_path"
-}
-
-zookeeper_install_prepare_directories() {
-    print_section "准备 ZooKeeper 目录"
-    
-    # 创建用户和组
-    print_step "创建用户和组..."
-    if ! getent group "$ZOOKEEPER_GROUP" >/dev/null; then
-        groupadd "$ZOOKEEPER_GROUP"
-    fi
-    
-    if ! id "$ZOOKEEPER_USER" >/dev/null 2>&1; then
-        useradd -r -g "$ZOOKEEPER_GROUP" -d "$ZOOKEEPER_DATA_DIR" -s /usr/sbin/nologin "$ZOOKEEPER_USER"
-    fi
-    
-    # 创建必要的目录
-    print_step "创建必要的目录..."
-    local dirs=(
-        "$ZOOKEEPER_INSTALL_DIR"
-        "$ZOOKEEPER_CONF_DIR"
-        "$ZOOKEEPER_LOG_DIR"
-        "$ZOOKEEPER_DATA_DIR"
-        "$ZOOKEEPER_PID_DIR"
-    )
-    
-    for dir in "${dirs[@]}"; do
-        if [ ! -d "$dir" ]; then
-            mkdir -p "$dir"
-        fi
-    done
-    
-    # 设置目录权限 - 确保PID目录有正确的权限
-    print_step "设置目录权限..."
-    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_DATA_DIR"
-    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_LOG_DIR"
-    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_PID_DIR"
-    chmod 755 "$ZOOKEEPER_PID_DIR"  # 确保目录可访问
-    
-    # 创建myid文件 (单机模式使用1)
-    print_step "创建 myid 文件..."
-    echo "1" > "$ZOOKEEPER_DATA_DIR/myid"
-    chown "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_DATA_DIR/myid"
-    
-    print_success "ZooKeeper 目录准备完成"
-}
-
-zookeeper_install_extract_package() {
-    print_section "解压 ZooKeeper 安装包"
-    
-    local download_dir="/opt"
-    local package_name="apache-zookeeper-${ZOOKEEPER_VERSION}-bin.tar.gz"
-    local download_path="${download_dir}/${package_name}"
-    
-    print_step "解压安装包..."
-    if ! tar -xzf "$download_path" -C "/tmp"; then
-        print_error "解压失败"
-        exit 1
-    fi
-    
-    # 解压后的目录名
-    local extracted_dir="/tmp/apache-zookeeper-${ZOOKEEPER_VERSION}-bin"
-    
-    # 确认解压目录存在
-    if [ ! -d "$extracted_dir" ]; then
-        print_error "解压后的目录不存在: $extracted_dir"
-        exit 1
-    fi
-    
-    print_step "复制文件到安装目录..."
-    cp -rf "$extracted_dir"/* "$ZOOKEEPER_INSTALL_DIR"
-    
-    # 设置目录权限
-    print_step "设置安装目录权限..."
-    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_INSTALL_DIR"
-    
-    # 清理临时文件
-    print_step "清理临时文件..."
-    rm -rf "$extracted_dir"
-    
-    print_success "ZooKeeper 安装包解压完成"
-}
-
-zookeeper_install_configure() {
-    print_section "配置 ZooKeeper"
-    
-    print_step "创建基本配置文件..."
-    
-    # 创建基本配置文件
-    local zoo_cfg="${ZOOKEEPER_CONF_DIR}/zoo.cfg"
-    cat > "$zoo_cfg" << EOL
-# ZooKeeper 基本配置
-tickTime=2000
-initLimit=10
-syncLimit=5
-dataDir=${ZOOKEEPER_DATA_DIR}
-clientPort=${ZOOKEEPER_PORT}
-maxClientCnxns=60
-admin.enableServer=true
-admin.serverPort=8080
-4lw.commands.whitelist=*
-
-# 日志配置
-autopurge.snapRetainCount=10
-autopurge.purgeInterval=24
-
-# 性能优化
-preAllocSize=65536
-snapCount=100000
-EOL
-
-    # 如果启用认证，添加安全配置
-    if [ "$ZOOKEEPER_ENABLE_AUTH" = true ]; then
-        print_step "配置安全选项..."
-        
-        # 创建 JAAS 配置文件
-        local jaas_file="${ZOOKEEPER_CONF_DIR}/jaas.conf"
-        cat > "$jaas_file" << EOL
-Server {
-    org.apache.zookeeper.server.auth.DigestLoginModule required
-    user_${ZOOKEEPER_SUPER_USER}="${ZOOKEEPER_SUPER_PASSWORD}";
-};
-EOL
-
-        # 添加安全配置到 zoo.cfg
-        cat >> "$zoo_cfg" << EOL
-
-# 安全配置
-authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider
-requireClientAuthScheme=sasl
-EOL
-
-        # 设置权限
-        chown "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$jaas_file"
-        chmod 600 "$jaas_file"
-    fi
-    
-    # 修改日志配置文件，确保使用.log扩展名
-    print_step "创建日志配置文件..."
-    cat > "${ZOOKEEPER_CONF_DIR}/log4j.properties" << EOL
-zookeeper.root.logger=INFO, CONSOLE, ROLLINGFILE
-zookeeper.console.threshold=INFO
-zookeeper.log.dir=${ZOOKEEPER_LOG_DIR}
-zookeeper.log.file=zookeeper.log
-zookeeper.log.threshold=INFO
-zookeeper.tracelog.dir=${ZOOKEEPER_LOG_DIR}
-zookeeper.tracelog.file=zookeeper_trace.log
-
-# 禁用.out日志文件
-zookeeper.serverlog.enabled=false
-zookeeper.serverlog.dir=${ZOOKEEPER_LOG_DIR}
-zookeeper.serverlog.file=zookeeper_server.log
-
-log4j.rootLogger=\${zookeeper.root.logger}
-
-# Console appender
-log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender
-log4j.appender.CONSOLE.Threshold=\${zookeeper.console.threshold}
-log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout
-log4j.appender.CONSOLE.layout.ConversionPattern=%d{ISO8601} [myid:%X{myid}] - %-5p [%t:%C{1}@%L] - %m%n
-
-# Rolling file appender
-log4j.appender.ROLLINGFILE=org.apache.log4j.RollingFileAppender
-log4j.appender.ROLLINGFILE.Threshold=\${zookeeper.log.threshold}
-log4j.appender.ROLLINGFILE.File=\${zookeeper.log.dir}/\${zookeeper.log.file}
-log4j.appender.ROLLINGFILE.MaxFileSize=100MB
-log4j.appender.ROLLINGFILE.MaxBackupIndex=10
-log4j.appender.ROLLINGFILE.layout=org.apache.log4j.PatternLayout
-log4j.appender.ROLLINGFILE.layout.ConversionPattern=%d{ISO8601} [myid:%X{myid}] - %-5p [%t:%C{1}@%L] - %m%n
-EOL
-
-    # 创建一个环境变量配置文件 - 使用ZooKeeper默认的变量和设置
-    cat > "${ZOOKEEPER_CONF_DIR}/zookeeper-env.sh" << EOL
-#!/bin/bash
-ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
-ZOO_LOG_DIR="${ZOOKEEPER_LOG_DIR}"
-ZOO_LOG_FILE="zookeeper.log"
-# 使用默认PID目录路径
-ZOO_PID_DIR="/run/zookeeper"
-JVMFLAGS="-Dzookeeper.log.dir=\${ZOO_LOG_DIR} -Dzookeeper.log.file=\${ZOO_LOG_FILE} -Dzookeeper.root.logger=\${ZOO_LOG4J_PROP}"
-EOL
-
-    chmod +x "${ZOOKEEPER_CONF_DIR}/zookeeper-env.sh"
-    chown "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "${ZOOKEEPER_CONF_DIR}/zookeeper-env.sh"
-    
-    # 设置文件权限
-    print_step "设置配置文件权限..."
-    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_CONF_DIR"
-    chmod -R 750 "$ZOOKEEPER_CONF_DIR"
-    
-    print_success "ZooKeeper 配置完成"
-}
-
-zookeeper_install_setup_service() {
-    print_section "设置 ZooKeeper 系统服务"
-    
-    # 创建服务文件
-    print_step "创建 systemd 服务文件..."
-    local service_file="/etc/systemd/system/zookeeper.service"
-    cat > "$service_file" << EOL
-[Unit]
-Description=ZooKeeper Service
-Documentation=https://zookeeper.apache.org
-After=network.target
-
-[Service]
-Type=forking
-User=${ZOOKEEPER_USER}
-Group=${ZOOKEEPER_GROUP}
-Environment="ZOO_LOG_DIR=${ZOOKEEPER_LOG_DIR}"
-Environment="ZOOCFGDIR=${ZOOKEEPER_CONF_DIR}" 
-Environment="ZOO_PID_DIR=/run/zookeeper"
-
-PermissionsStartOnly=true
-ExecStartPre=/bin/sh -c 'mkdir -p /run/zookeeper && rm -f /run/zookeeper/zookeeper_server.pid && touch /run/zookeeper/zookeeper_server.pid && chown -R ${ZOOKEEPER_USER}:${ZOOKEEPER_GROUP} /run/zookeeper'
-ExecStart=${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh start
-ExecStartPost=/bin/sh -c 'pid=\$(pgrep -f org.apache.zookeeper.server.quorum.QuorumPeerMain | head -1); if [ -n "\$pid" ]; then echo \$pid > /run/zookeeper/zookeeper_server.pid; fi'
-ExecStop=${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh stop
-WorkingDirectory=${ZOOKEEPER_INSTALL_DIR}
-PIDFile=/run/zookeeper/zookeeper_server.pid
-
-TimeoutSec=180
-Restart=on-failure
-RestartSec=30
-LimitNOFILE=65536
-RuntimeDirectory=zookeeper
-RuntimeDirectoryMode=0755
-
-[Install]
-WantedBy=multi-user.target
-EOL
-
-    # 重新加载 systemd
-    print_step "重新加载 systemd..."
-    systemctl daemon-reload
-    
-    # 启用并启动服务
-    print_step "启用 ZooKeeper 服务..."
-    systemctl enable zookeeper
-    
-    print_step "启动 ZooKeeper 服务..."
-    systemctl start zookeeper
-    
-    # 等待服务启动
-    print_step "等待服务启动..."
-    sleep 10
-    
-    # 通过检查进程来验证
-    if pgrep -f "org.apache.zookeeper.server.quorum.QuorumPeerMain" > /dev/null; then
-        print_success "ZooKeeper 服务已启动"
-    else
-        print_error "ZooKeeper 服务启动失败"
-        print_info "请检查日志: journalctl -u zookeeper"
-        exit 1
-    fi
-    
-    print_success "ZooKeeper 系统服务设置完成"
-}
-
-zookeeper_install_create_client_guide() {
-    print_section "创建 ZooKeeper 客户端连接指南"
-    
-    # 创建客户端指南目录
-    print_step "创建客户端指南目录..."
-    local guide_dir="${ZOOKEEPER_INSTALL_DIR}/client-guide"
-    mkdir -p "$guide_dir"
-    
-    # 创建 README 文件
-    print_step "创建连接指南文档..."
-    local readme_file="${guide_dir}/README.md"
-    
-    cat > "$readme_file" << EOL
-# ZooKeeper 客户端连接指南
-
-## 基本信息
-- ZooKeeper 版本: ${ZOOKEEPER_VERSION}
-- 服务器地址: $(hostname -I | awk '{print $1}')
-- 端口: ${ZOOKEEPER_PORT}
-- 安装目录: ${ZOOKEEPER_INSTALL_DIR}
-
-## 命令行连接
-EOL
-
-    # 根据是否启用安全认证添加不同的连接示例
-    if [ "$ZOOKEEPER_ENABLE_AUTH" = true ]; then
-        cat >> "$readme_file" << EOL
-### 带认证连接
-\`\`\`bash
-# 使用内置客户端带认证连接
-${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server localhost:${ZOOKEEPER_PORT} -auth digest:${ZOOKEEPER_SUPER_USER}:${ZOOKEEPER_SUPER_PASSWORD}
-
-# 远程服务器连接
-${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server your-server-ip:${ZOOKEEPER_PORT} -auth digest:${ZOOKEEPER_SUPER_USER}:${ZOOKEEPER_SUPER_PASSWORD}
-\`\`\`
-
-## JAAS 配置文件示例
-创建一个名为 \`client-jaas.conf\` 的文件，内容如下:
-
-\`\`\`
-Client {
-    org.apache.zookeeper.server.auth.DigestLoginModule required
-    username="${ZOOKEEPER_SUPER_USER}"
-    password="${ZOOKEEPER_SUPER_PASSWORD}";
-};
-\`\`\`
-
-## Java 客户端连接示例
-\`\`\`java
-// Java 连接示例
-Properties props = new Properties();
-props.setProperty("zookeeper.sasl.client", "true");
-props.setProperty("zookeeper.sasl.clientconfig", "Client");
-System.setProperty("java.security.auth.login.config", "/path/to/client-jaas.conf");
-
-ZooKeeper zk = new ZooKeeper("your-server-ip:${ZOOKEEPER_PORT}", 3000, watcher);
-zk.addAuthInfo("digest", "${ZOOKEEPER_SUPER_USER}:${ZOOKEEPER_SUPER_PASSWORD}".getBytes());
-\`\`\`
-EOL
-    else
-        cat >> "$readme_file" << EOL
-### 连接命令
-\`\`\`bash
-# 本地连接
-${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server localhost:${ZOOKEEPER_PORT}
-
-# 远程服务器连接
-${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server your-server-ip:${ZOOKEEPER_PORT}
-\`\`\`
-
-## Java 客户端连接示例
-\`\`\`java
-// Java 连接示例
-ZooKeeper zk = new ZooKeeper("your-server-ip:${ZOOKEEPER_PORT}", 3000, watcher);
-\`\`\`
-EOL
-    fi
-    
-    cat >> "$readme_file" << EOL
-
-## 常用操作命令
-\`\`\`bash
-# 列出根节点下的子节点
-ls /
-
-# 创建节点
-create /my_node data
-
-# 获取节点数据
-get /my_node
-
-# 修改节点数据
-set /my_node new_data
-
-# 删除节点
-delete /my_node
-
-# 递归删除节点及其子节点
-deleteall /my_node
-
-# 查看节点状态
-stat /my_node
-\`\`\`
-
-## 测试连接
-\`\`\`bash
-${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh status
-\`\`\`
-EOL
-
-    # 创建测试连接脚本
-    print_step "创建测试连接脚本..."
-    local test_script="${guide_dir}/test-connection.sh"
-    
-    cat > "$test_script" << 'EOL'
-#!/bin/bash
-# ZooKeeper 连接测试脚本
-
-# 服务器信息
-ZK_SERVER="localhost"
-ZK_PORT="2181"
-
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# 测试连接函数
-test_connection() {
-    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - 测试连接到 ZooKeeper 服务器 ${ZK_SERVER}:${ZK_PORT}...${NC}"
-    
-    # 尝试使用 ruok 命令测试
-    local result=$(echo ruok | nc ${ZK_SERVER} ${ZK_PORT} 2>/dev/null)
-    
-    if [ "$result" == "imok" ]; then
-        echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] - 连接测试成功!${NC}"
-        return 0
-    else
-        echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - 连接测试失败!${NC}"
-        return 1
-    fi
-}
-
-# 测试基本操作
-test_operations() {
-    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - 测试 ZooKeeper 基本操作...${NC}"
-    
-    # 获取 ZooKeeper 根节点列表
-    local zkdir=$(dirname "$0")/../bin
-    echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - 尝试获取根节点列表...${NC}"
-    ${zkdir}/zkCli.sh -server ${ZK_SERVER}:${ZK_PORT} ls / 2>&1 | grep -q "WatchedEvent"
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] - 基本操作测试成功!${NC}"
-        return 0
-    else
-        echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - 基本操作测试失败!${NC}"
-        return 1
-    fi
-}
-
-# 主函数
-main() {
-    echo -e "${BLUE}=== ZooKeeper 连接测试 ===${NC}"
-    
-    if test_connection; then
-        test_operations
-    else
-        echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - 跳过操作测试${NC}"
-        exit 1
-    fi
-    
-    echo -e "${BLUE}=== 测试完成 ===${NC}"
-}
-
-# 执行主函数
-main
-EOL
-
-    # 设置执行权限
-    chmod +x "$test_script"
-    
-    # 替换端口
-    sed -i "s/ZK_PORT=\"2181\"/ZK_PORT=\"${ZOOKEEPER_PORT}\"/" "$test_script"
-    
-    # 设置目录权限
-    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$guide_dir"
-    chmod -R 755 "$guide_dir"
-    
-    print_success "ZooKeeper 客户端连接指南创建完成"
-}
-
-zookeeper_install_verify() {
-    print_section "验证 ZooKeeper 安装"
-    
-    print_step "检查进程..."
-    if ! pgrep -f "org.apache.zookeeper.server.quorum.QuorumPeerMain" > /dev/null; then
-        print_error "ZooKeeper 进程未运行"
-        exit 1
-    fi
-    
-    print_step "检查端口..."
-    if ! netstat -tuln | grep ":${ZOOKEEPER_PORT}" > /dev/null; then
-        print_error "ZooKeeper 端口 ${ZOOKEEPER_PORT} 未监听"
-        exit 1
-    fi
-    
-    print_step "测试简单连接..."
-    # 使用我们刚刚配置的环境变量确保脚本找到正确的配置文件
-    if ! echo "ruok" | nc localhost ${ZOOKEEPER_PORT} 2>/dev/null | grep -q "imok"; then
-        print_warning "ZooKeeper 4lw 连接测试失败，尝试另一种方式验证..."
-        
-        # 使用zkServer.sh status，并明确指定配置文件路径
-        if ! ZOOCFGDIR=${ZOOKEEPER_CONF_DIR} ${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh status; then
-            print_error "ZooKeeper 连接测试失败"
-            exit 1
-        fi
-    fi
-    
-    print_success "ZooKeeper 验证完成，服务运行正常"
-}
-
-zookeeper_install_finish() {
-    print_section "ZooKeeper 安装完成"
-    
-    print_info "ZooKeeper 安装信息:"
-    print_info "  版本: ${ZOOKEEPER_VERSION}"
-    print_info "  安装目录: ${ZOOKEEPER_INSTALL_DIR}"
-    print_info "  配置目录: ${ZOOKEEPER_CONF_DIR}"
-    print_info "  数据目录: ${ZOOKEEPER_DATA_DIR}"
-    print_info "  日志目录: ${ZOOKEEPER_LOG_DIR}"
-    print_info "  服务状态: $(systemctl is-active zookeeper)"
-    print_info "  端口: ${ZOOKEEPER_PORT}"
-    
-    if [ "$ZOOKEEPER_ENABLE_AUTH" = true ]; then
-        print_info "  认证用户: ${ZOOKEEPER_SUPER_USER}"
-        print_info "  认证密码: ${ZOOKEEPER_SUPER_PASSWORD}"
-    fi
-    
-    print_info "服务控制命令:"
-    print_info "  启动: systemctl start zookeeper"
-    print_info "  停止: systemctl stop zookeeper"
-    print_info "  重启: systemctl restart zookeeper"
-    print_info "  状态: systemctl status zookeeper"
-    
-    print_info "客户端连接指南:"
-    print_info "  ${ZOOKEEPER_INSTALL_DIR}/client-guide/README.md"
-    
-    print_success "ZooKeeper 安装成功完成"
-}
-
-zookeeper_install() {
-    print_debug "开始 ZooKeeper 安装流程"
-    
-    # 记录开始时间
-    local start_time=$(date +%s)
-    
-    # 执行安装步骤
-    zookeeper_common_check_dependencies
-    zookeeper_common_check_processes
-    zookeeper_install_cleanup_previous
-    zookeeper_install_download_package
-    zookeeper_install_prepare_directories
-    zookeeper_install_extract_package
-    zookeeper_install_configure
-    zookeeper_install_setup_service
-    zookeeper_install_create_client_guide
-    zookeeper_install_verify
-    
-    # 计算用时
-    local end_time=$(date +%s)
-    local installation_time=$((end_time - start_time))
-    
-    print_info "安装用时: ${installation_time} 秒"
-    zookeeper_install_finish
 }
 
 zookeeper_uninstall_stop_service() {
@@ -3954,9 +3374,657 @@ zookeeper_uninstall() {
     zookeeper_uninstall_finish
 }
 
+zookeeper_silent_uninstall() {
+    print_section "自动清理 ZooKeeper"
+    
+    # 跳过用户交互，直接执行卸载步骤
+    print_step "停止服务并清理文件..."
+    zookeeper_uninstall_stop_service
+    zookeeper_uninstall_remove_files
+    zookeeper_uninstall_remove_env_files
+    zookeeper_uninstall_remove_user
+    
+    print_success "ZooKeeper 环境清理完成"
+}
+
+zookeeper_install_cleanup_previous() {
+    print_section "清理历史数据"
+
+    # 停止可能运行的 ZooKeeper 服务
+    if systemctl is-active zookeeper >/dev/null 2>&1; then
+        print_step "停止 ZooKeeper 服务..."
+        systemctl stop zookeeper
+        systemctl disable zookeeper
+        print_success "ZooKeeper 服务已停止并禁用"
+    fi
+
+    # 删除旧的 ZooKeeper 安装
+    if [ -d "$ZOOKEEPER_INSTALL_DIR" ]; then
+        print_step "删除旧的 ZooKeeper 安装目录..."
+        rm -rf "$ZOOKEEPER_INSTALL_DIR"
+        print_success "旧的安装目录已删除"
+    fi
+
+    # 删除其他目录和文件
+    local dirs=("$ZOOKEEPER_CONF_DIR" "$ZOOKEEPER_DATA_DIR" "$ZOOKEEPER_LOG_DIR" "$ZOOKEEPER_PID_DIR")
+    for dir in "${dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            print_step "删除目录: $dir"
+            rm -rf "$dir"
+            print_success "目录已删除: $dir"
+        fi
+    done
+
+    # 删除 systemd 服务文件
+    if [ -f "/etc/systemd/system/zookeeper.service" ]; then
+        print_step "删除 systemd 服务文件..."
+        rm -f "/etc/systemd/system/zookeeper.service"
+        systemctl daemon-reload
+        print_success "服务文件已删除"
+    fi
+
+    # 删除环境变量文件
+    if [ -f "/etc/profile.d/zookeeper.sh" ]; then
+        print_step "删除环境变量文件..."
+        rm -f "/etc/profile.d/zookeeper.sh"
+        print_success "环境变量文件已删除"
+    fi
+
+    # 清理临时下载文件
+    print_step "清理临时下载文件..."
+    rm -f "/opt/apache-zookeeper-*.tar.gz"
+    print_success "临时文件清理完成"
+}
+
+zookeeper_install_download_package() {
+    print_section "下载 ZooKeeper 安装包"
+
+    local download_dir="/opt"
+    local package_name="apache-zookeeper-${ZOOKEEPER_VERSION}-bin.tar.gz"
+    local download_path="${download_dir}/${package_name}"
+
+    print_step "检查下载目录..."
+    if [ ! -d "$download_dir" ]; then
+        mkdir -p "$download_dir"
+    fi
+
+    # 如果已经存在下载文件，询问是否重新下载
+    if [ -f "$download_path" ]; then
+        print_warning "发现已下载的 ZooKeeper 安装包"
+        read -p "[$(date '+%Y-%m-%d %H:%M:%S')] [INPUT] - 是否重新下载? (y/n): " redownload
+        if [ "$redownload" = "y" ] || [ "$redownload" = "Y" ]; then
+            rm -f "$download_path"
+        else
+            print_info "使用已下载的安装包"
+            return 0
+        fi
+    fi
+
+    print_step "开始下载 ZooKeeper ${ZOOKEEPER_VERSION}..."
+    if ! wget --no-check-certificate \
+            --progress=bar:force \
+            -O "$download_path" \
+            "$ZOOKEEPER_SOURCE_URL"; then
+        print_error "下载失败，请检查网络连接和下载地址"
+        exit 1
+    fi
+
+    # 验证下载是否成功
+    if [ ! -f "$download_path" ]; then
+        print_error "下载文件不存在"
+        exit 1
+    fi
+
+    if [ "$(stat -c%s "$download_path")" -lt 1000000 ]; then
+        print_error "下载的文件大小异常，可能不是有效的安装包"
+        exit 1
+    fi
+
+    print_success "ZooKeeper 安装包下载完成: $download_path"
+}
+
+zookeeper_install_prepare_directories() {
+    print_section "准备 ZooKeeper 目录"
+
+    # 创建用户和组
+    print_step "创建用户和组..."
+    if ! getent group "$ZOOKEEPER_GROUP" >/dev/null; then
+        groupadd "$ZOOKEEPER_GROUP"
+    fi
+
+    if ! id "$ZOOKEEPER_USER" >/dev/null 2>&1; then
+        useradd -r -g "$ZOOKEEPER_GROUP" -d "$ZOOKEEPER_DATA_DIR" -s /usr/sbin/nologin "$ZOOKEEPER_USER"
+    fi
+
+    # 创建必要的目录
+    print_step "创建必要的目录..."
+    local dirs=(
+        "$ZOOKEEPER_INSTALL_DIR"
+        "$ZOOKEEPER_CONF_DIR"
+        "$ZOOKEEPER_LOG_DIR"
+        "$ZOOKEEPER_DATA_DIR"
+        "$ZOOKEEPER_PID_DIR"
+    )
+
+    for dir in "${dirs[@]}"; do
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir"
+        fi
+    done
+
+    # 设置目录权限 - 确保PID目录有正确的权限
+    print_step "设置目录权限..."
+    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_DATA_DIR"
+    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_LOG_DIR"
+    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_PID_DIR"
+    chmod 755 "$ZOOKEEPER_PID_DIR"  # 确保目录可访问
+
+    # 创建myid文件 (单机模式使用1)
+    print_step "创建 myid 文件..."
+    echo "1" > "$ZOOKEEPER_DATA_DIR/myid"
+    chown "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_DATA_DIR/myid"
+
+    print_success "ZooKeeper 目录准备完成"
+}
+
+zookeeper_install_extract_package() {
+    print_section "解压 ZooKeeper 安装包"
+
+    local download_dir="/opt"
+    local package_name="apache-zookeeper-${ZOOKEEPER_VERSION}-bin.tar.gz"
+    local download_path="${download_dir}/${package_name}"
+
+    print_step "解压安装包..."
+    if ! tar -xzf "$download_path" -C "/tmp"; then
+        print_error "解压失败"
+        exit 1
+    fi
+
+    # 解压后的目录名
+    local extracted_dir="/tmp/apache-zookeeper-${ZOOKEEPER_VERSION}-bin"
+
+    # 确认解压目录存在
+    if [ ! -d "$extracted_dir" ]; then
+        print_error "解压后的目录不存在: $extracted_dir"
+        exit 1
+    fi
+
+    print_step "复制文件到安装目录..."
+    cp -rf "$extracted_dir"/* "$ZOOKEEPER_INSTALL_DIR"
+
+    # 设置目录权限
+    print_step "设置安装目录权限..."
+    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_INSTALL_DIR"
+
+    # 清理临时文件
+    print_step "清理临时文件..."
+    rm -rf "$extracted_dir"
+
+    print_success "ZooKeeper 安装包解压完成"
+}
+
+zookeeper_install_configure() {
+    print_section "配置 ZooKeeper"
+
+    print_step "创建基本配置文件..."
+
+    # 创建基本配置文件
+    local zoo_cfg="${ZOOKEEPER_CONF_DIR}/zoo.cfg"
+    cat > "$zoo_cfg" << EOL
+# ZooKeeper 基本配置
+tickTime=2000
+initLimit=10
+syncLimit=5
+dataDir=${ZOOKEEPER_DATA_DIR}
+clientPort=${ZOOKEEPER_PORT}
+maxClientCnxns=60
+admin.enableServer=true
+admin.serverPort=8080
+4lw.commands.whitelist=*
+
+# 日志配置
+autopurge.snapRetainCount=10
+autopurge.purgeInterval=24
+
+# 性能优化
+preAllocSize=65536
+snapCount=100000
+EOL
+
+    # 如果启用认证，添加安全配置
+    if [ "$ZOOKEEPER_ENABLE_AUTH" = true ]; then
+        print_step "配置安全选项..."
+
+        # 创建 JAAS 配置文件
+        local jaas_file="${ZOOKEEPER_CONF_DIR}/jaas.conf"
+        cat > "$jaas_file" << EOL
+Server {
+    org.apache.zookeeper.server.auth.DigestLoginModule required
+    user_${ZOOKEEPER_SUPER_USER}="${ZOOKEEPER_SUPER_PASSWORD}";
+};
+EOL
+
+        # 添加安全配置到 zoo.cfg
+        cat >> "$zoo_cfg" << EOL
+
+# 安全配置
+authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider
+requireClientAuthScheme=sasl
+EOL
+
+        # 设置权限
+        chown "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$jaas_file"
+        chmod 600 "$jaas_file"
+    fi
+
+    # 修改日志配置文件，确保使用.log扩展名
+    print_step "创建日志配置文件..."
+    cat > "${ZOOKEEPER_CONF_DIR}/log4j.properties" << EOL
+zookeeper.root.logger=INFO, CONSOLE, ROLLINGFILE
+zookeeper.console.threshold=INFO
+zookeeper.log.dir=${ZOOKEEPER_LOG_DIR}
+zookeeper.log.file=zookeeper.log
+zookeeper.log.threshold=INFO
+zookeeper.tracelog.dir=${ZOOKEEPER_LOG_DIR}
+zookeeper.tracelog.file=zookeeper_trace.log
+
+# 禁用.out日志文件
+zookeeper.serverlog.enabled=false
+zookeeper.serverlog.dir=${ZOOKEEPER_LOG_DIR}
+zookeeper.serverlog.file=zookeeper_server.log
+
+log4j.rootLogger=\${zookeeper.root.logger}
+
+# Console appender
+log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender
+log4j.appender.CONSOLE.Threshold=\${zookeeper.console.threshold}
+log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout
+log4j.appender.CONSOLE.layout.ConversionPattern=%d{ISO8601} [myid:%X{myid}] - %-5p [%t:%C{1}@%L] - %m%n
+
+# Rolling file appender
+log4j.appender.ROLLINGFILE=org.apache.log4j.RollingFileAppender
+log4j.appender.ROLLINGFILE.Threshold=\${zookeeper.log.threshold}
+log4j.appender.ROLLINGFILE.File=\${zookeeper.log.dir}/\${zookeeper.log.file}
+log4j.appender.ROLLINGFILE.MaxFileSize=100MB
+log4j.appender.ROLLINGFILE.MaxBackupIndex=10
+log4j.appender.ROLLINGFILE.layout=org.apache.log4j.PatternLayout
+log4j.appender.ROLLINGFILE.layout.ConversionPattern=%d{ISO8601} [myid:%X{myid}] - %-5p [%t:%C{1}@%L] - %m%n
+EOL
+
+    # 创建一个环境变量配置文件 - 使用ZooKeeper默认的变量和设置
+    cat > "${ZOOKEEPER_CONF_DIR}/zookeeper-env.sh" << EOL
+#!/bin/bash
+ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
+ZOO_LOG_DIR="${ZOOKEEPER_LOG_DIR}"
+ZOO_LOG_FILE="zookeeper.log"
+# 使用默认PID目录路径
+ZOO_PID_DIR="/run/zookeeper"
+JVMFLAGS="-Dzookeeper.log.dir=\${ZOO_LOG_DIR} -Dzookeeper.log.file=\${ZOO_LOG_FILE} -Dzookeeper.root.logger=\${ZOO_LOG4J_PROP}"
+EOL
+
+    chmod +x "${ZOOKEEPER_CONF_DIR}/zookeeper-env.sh"
+    chown "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "${ZOOKEEPER_CONF_DIR}/zookeeper-env.sh"
+
+    # 设置文件权限
+    print_step "设置配置文件权限..."
+    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$ZOOKEEPER_CONF_DIR"
+    chmod -R 750 "$ZOOKEEPER_CONF_DIR"
+
+    print_success "ZooKeeper 配置完成"
+}
+
+zookeeper_install_setup_service() {
+    print_section "设置 ZooKeeper 系统服务"
+
+    # 创建服务文件
+    print_step "创建 systemd 服务文件..."
+    local service_file="/etc/systemd/system/zookeeper.service"
+    cat > "$service_file" << EOL
+[Unit]
+Description=ZooKeeper Service
+Documentation=https://zookeeper.apache.org
+After=network.target
+
+[Service]
+Type=forking
+User=${ZOOKEEPER_USER}
+Group=${ZOOKEEPER_GROUP}
+Environment="ZOO_LOG_DIR=${ZOOKEEPER_LOG_DIR}"
+Environment="ZOOCFGDIR=${ZOOKEEPER_CONF_DIR}"
+Environment="ZOO_PID_DIR=/run/zookeeper"
+
+PermissionsStartOnly=true
+ExecStartPre=/bin/sh -c 'mkdir -p /run/zookeeper && rm -f /run/zookeeper/zookeeper_server.pid && touch /run/zookeeper/zookeeper_server.pid && chown -R ${ZOOKEEPER_USER}:${ZOOKEEPER_GROUP} /run/zookeeper'
+ExecStart=${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh start
+ExecStartPost=/bin/sh -c 'pid=\$(pgrep -f org.apache.zookeeper.server.quorum.QuorumPeerMain | head -1); if [ -n "\$pid" ]; then echo \$pid > /run/zookeeper/zookeeper_server.pid; fi'
+ExecStop=${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh stop
+WorkingDirectory=${ZOOKEEPER_INSTALL_DIR}
+PIDFile=/run/zookeeper/zookeeper_server.pid
+
+TimeoutSec=180
+Restart=on-failure
+RestartSec=30
+LimitNOFILE=65536
+RuntimeDirectory=zookeeper
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+    # 重新加载 systemd
+    print_step "重新加载 systemd..."
+    systemctl daemon-reload
+
+    # 启用并启动服务
+    print_step "启用 ZooKeeper 服务..."
+    systemctl enable zookeeper
+
+    print_step "启动 ZooKeeper 服务..."
+    systemctl start zookeeper
+
+    # 等待服务启动
+    print_step "等待服务启动..."
+    sleep 10
+
+    # 通过检查进程来验证
+    if pgrep -f "org.apache.zookeeper.server.quorum.QuorumPeerMain" > /dev/null; then
+        print_success "ZooKeeper 服务已启动"
+    else
+        print_error "ZooKeeper 服务启动失败"
+        print_info "请检查日志: journalctl -u zookeeper"
+        exit 1
+    fi
+
+    print_success "ZooKeeper 系统服务设置完成"
+}
+
+zookeeper_install_create_client_guide() {
+    print_section "创建 ZooKeeper 客户端连接指南"
+
+    # 创建客户端指南目录
+    print_step "创建客户端指南目录..."
+    local guide_dir="${ZOOKEEPER_INSTALL_DIR}/client-guide"
+    mkdir -p "$guide_dir"
+
+    # 创建 README 文件
+    print_step "创建连接指南文档..."
+    local readme_file="${guide_dir}/README.md"
+
+    cat > "$readme_file" << EOL
+# ZooKeeper 客户端连接指南
+
+## 基本信息
+- ZooKeeper 版本: ${ZOOKEEPER_VERSION}
+- 服务器地址: $(hostname -I | awk '{print $1}')
+- 端口: ${ZOOKEEPER_PORT}
+- 安装目录: ${ZOOKEEPER_INSTALL_DIR}
+
+## 命令行连接
+EOL
+
+    # 根据是否启用安全认证添加不同的连接示例
+    if [ "$ZOOKEEPER_ENABLE_AUTH" = true ]; then
+        cat >> "$readme_file" << EOL
+### 带认证连接
+\`\`\`bash
+# 使用内置客户端带认证连接
+${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server localhost:${ZOOKEEPER_PORT} -auth digest:${ZOOKEEPER_SUPER_USER}:${ZOOKEEPER_SUPER_PASSWORD}
+
+# 远程服务器连接
+${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server your-server-ip:${ZOOKEEPER_PORT} -auth digest:${ZOOKEEPER_SUPER_USER}:${ZOOKEEPER_SUPER_PASSWORD}
+\`\`\`
+
+## JAAS 配置文件示例
+创建一个名为 \`client-jaas.conf\` 的文件，内容如下:
+
+\`\`\`
+Client {
+    org.apache.zookeeper.server.auth.DigestLoginModule required
+    username="${ZOOKEEPER_SUPER_USER}"
+    password="${ZOOKEEPER_SUPER_PASSWORD}";
+};
+\`\`\`
+
+## Java 客户端连接示例
+\`\`\`java
+// Java 连接示例
+Properties props = new Properties();
+props.setProperty("zookeeper.sasl.client", "true");
+props.setProperty("zookeeper.sasl.clientconfig", "Client");
+System.setProperty("java.security.auth.login.config", "/path/to/client-jaas.conf");
+
+ZooKeeper zk = new ZooKeeper("your-server-ip:${ZOOKEEPER_PORT}", 3000, watcher);
+zk.addAuthInfo("digest", "${ZOOKEEPER_SUPER_USER}:${ZOOKEEPER_SUPER_PASSWORD}".getBytes());
+\`\`\`
+EOL
+    else
+        cat >> "$readme_file" << EOL
+### 连接命令
+\`\`\`bash
+# 本地连接
+${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server localhost:${ZOOKEEPER_PORT}
+
+# 远程服务器连接
+${ZOOKEEPER_INSTALL_DIR}/bin/zkCli.sh -server your-server-ip:${ZOOKEEPER_PORT}
+\`\`\`
+
+## Java 客户端连接示例
+\`\`\`java
+// Java 连接示例
+ZooKeeper zk = new ZooKeeper("your-server-ip:${ZOOKEEPER_PORT}", 3000, watcher);
+\`\`\`
+EOL
+    fi
+
+    cat >> "$readme_file" << EOL
+
+## 常用操作命令
+\`\`\`bash
+# 列出根节点下的子节点
+ls /
+
+# 创建节点
+create /my_node data
+
+# 获取节点数据
+get /my_node
+
+# 修改节点数据
+set /my_node new_data
+
+# 删除节点
+delete /my_node
+
+# 递归删除节点及其子节点
+deleteall /my_node
+
+# 查看节点状态
+stat /my_node
+\`\`\`
+
+## 测试连接
+\`\`\`bash
+${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh status
+\`\`\`
+EOL
+
+    # 创建测试连接脚本
+    print_step "创建测试连接脚本..."
+    local test_script="${guide_dir}/test-connection.sh"
+
+    cat > "$test_script" << 'EOL'
+#!/bin/bash
+# ZooKeeper 连接测试脚本
+
+# 服务器信息
+ZK_SERVER="localhost"
+ZK_PORT="2181"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 测试连接函数
+test_connection() {
+    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - 测试连接到 ZooKeeper 服务器 ${ZK_SERVER}:${ZK_PORT}...${NC}"
+
+    # 尝试使用 ruok 命令测试
+    local result=$(echo ruok | nc ${ZK_SERVER} ${ZK_PORT} 2>/dev/null)
+
+    if [ "$result" == "imok" ]; then
+        echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] - 连接测试成功!${NC}"
+        return 0
+    else
+        echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - 连接测试失败!${NC}"
+        return 1
+    fi
+}
+
+# 测试基本操作
+test_operations() {
+    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - 测试 ZooKeeper 基本操作...${NC}"
+
+    # 获取 ZooKeeper 根节点列表
+    local zkdir=$(dirname "$0")/../bin
+    echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - 尝试获取根节点列表...${NC}"
+    ${zkdir}/zkCli.sh -server ${ZK_SERVER}:${ZK_PORT} ls / 2>&1 | grep -q "WatchedEvent"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] - 基本操作测试成功!${NC}"
+        return 0
+    else
+        echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - 基本操作测试失败!${NC}"
+        return 1
+    fi
+}
+
+# 主函数
+main() {
+    echo -e "${BLUE}=== ZooKeeper 连接测试 ===${NC}"
+
+    if test_connection; then
+        test_operations
+    else
+        echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - 跳过操作测试${NC}"
+        exit 1
+    fi
+
+    echo -e "${BLUE}=== 测试完成 ===${NC}"
+}
+
+# 执行主函数
+main
+EOL
+
+    # 设置执行权限
+    chmod +x "$test_script"
+
+    # 替换端口
+    sed -i "s/ZK_PORT=\"2181\"/ZK_PORT=\"${ZOOKEEPER_PORT}\"/" "$test_script"
+
+    # 设置目录权限
+    chown -R "$ZOOKEEPER_USER:$ZOOKEEPER_GROUP" "$guide_dir"
+    chmod -R 755 "$guide_dir"
+
+    print_success "ZooKeeper 客户端连接指南创建完成"
+}
+
+zookeeper_install_verify() {
+    print_section "验证 ZooKeeper 安装"
+
+    print_step "检查进程..."
+    if ! pgrep -f "org.apache.zookeeper.server.quorum.QuorumPeerMain" > /dev/null; then
+        print_error "ZooKeeper 进程未运行"
+        exit 1
+    fi
+
+    print_step "检查端口..."
+    if ! netstat -tuln | grep ":${ZOOKEEPER_PORT}" > /dev/null; then
+        print_error "ZooKeeper 端口 ${ZOOKEEPER_PORT} 未监听"
+        exit 1
+    fi
+
+    print_step "测试简单连接..."
+    # 使用我们刚刚配置的环境变量确保脚本找到正确的配置文件
+    if ! echo "ruok" | nc localhost ${ZOOKEEPER_PORT} 2>/dev/null | grep -q "imok"; then
+        print_warning "ZooKeeper 4lw 连接测试失败，尝试另一种方式验证..."
+
+        # 使用zkServer.sh status，并明确指定配置文件路径
+        if ! ZOOCFGDIR=${ZOOKEEPER_CONF_DIR} ${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh status; then
+            print_error "ZooKeeper 连接测试失败"
+            exit 1
+        fi
+    fi
+
+    print_success "ZooKeeper 验证完成，服务运行正常"
+}
+
+zookeeper_install_finish() {
+    print_section "ZooKeeper 安装完成"
+
+    print_info "ZooKeeper 安装信息:"
+    print_info "  版本: ${ZOOKEEPER_VERSION}"
+    print_info "  安装目录: ${ZOOKEEPER_INSTALL_DIR}"
+    print_info "  配置目录: ${ZOOKEEPER_CONF_DIR}"
+    print_info "  数据目录: ${ZOOKEEPER_DATA_DIR}"
+    print_info "  日志目录: ${ZOOKEEPER_LOG_DIR}"
+    print_info "  服务状态: $(systemctl is-active zookeeper)"
+    print_info "  端口: ${ZOOKEEPER_PORT}"
+
+    if [ "$ZOOKEEPER_ENABLE_AUTH" = true ]; then
+        print_info "  认证用户: ${ZOOKEEPER_SUPER_USER}"
+        print_info "  认证密码: ${ZOOKEEPER_SUPER_PASSWORD}"
+    fi
+
+    print_info "服务控制命令:"
+    print_info "  启动: systemctl start zookeeper"
+    print_info "  停止: systemctl stop zookeeper"
+    print_info "  重启: systemctl restart zookeeper"
+    print_info "  状态: systemctl status zookeeper"
+
+    print_info "客户端连接指南:"
+    print_info "  ${ZOOKEEPER_INSTALL_DIR}/client-guide/README.md"
+
+    print_success "ZooKeeper 安装成功完成"
+}
+
+zookeeper_install() {
+    print_debug "开始 ZooKeeper 安装流程"
+
+    # 记录开始时间
+    local start_time=$(date +%s)
+
+    # 安装前先执行删除指令
+    print_step "安装前清理现有 ZooKeeper 安装..."
+    zookeeper_silent_uninstall
+
+    # 执行安装步骤
+    zookeeper_common_check_dependencies
+    zookeeper_common_check_processes
+    zookeeper_install_cleanup_previous
+    zookeeper_install_download_package
+    zookeeper_install_prepare_directories
+    zookeeper_install_extract_package
+    zookeeper_install_configure
+    zookeeper_install_setup_service
+    zookeeper_install_create_client_guide
+    zookeeper_install_verify
+
+    # 计算用时
+    local end_time=$(date +%s)
+    local installation_time=$((end_time - start_time))
+
+    print_info "安装用时: ${installation_time} 秒"
+    zookeeper_install_finish
+}
 
 
-# 7. 菜单管理函数
+
+# 10. 菜单管理函数
 # ======================
 manage_java() {
     print_section "JDK 管理"
@@ -4066,116 +4134,9 @@ manage_zookeeper() {
     done
 }
 
-# CentOS 软件源更新相关函数
-centos_repo_update() {
-    print_section "更新 CentOS 软件源"
 
-    # 检查系统版本
-    if ! grep -qi "centos" /etc/redhat-release; then
-        print_error "当前系统不是 CentOS，无法更新软件源"
-        exit 1
-    fi
 
-    # 备份原有的 repo 文件
-    print_step "备份原有软件源配置..."
-    sudo mkdir -p /etc/yum.repos.d/backup
-    sudo mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/backup/ 2>/dev/null
-    print_success "原有配置已备份到 /etc/yum.repos.d/backup/"
-
-    # 下载新的 repo 文件
-    print_step "下载阿里云 CentOS 软件源配置..."
-    if ! curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo; then
-        print_error "下载 CentOS-Base.repo 失败"
-        exit 1
-    fi
-    print_success "CentOS Base 源配置完成"
-
-    # 添加 EPEL 源
-    print_step "下载阿里云 EPEL 源配置..."
-    if ! curl -o /etc/yum.repos.d/epel.repo https://mirrors.aliyun.com/repo/epel-7.repo; then
-        print_error "下载 epel.repo 失败"
-        exit 1
-    fi
-    print_success "EPEL 源配置完成"
-
-    # 清除缓存并更新
-    print_step "清理并更新软件源缓存..."
-    yum clean all
-    rm -rf /var/cache/yum/*
-    yum makecache
-    print_success "软件源缓存已更新"
-
-    # 验证源是否可用
-    print_step "验证软件源可用性..."
-    if ! yum repolist | grep -E "base|extras|updates|epel" > /dev/null; then
-        print_error "软件源验证失败"
-        exit 1
-    fi
-
-    print_success "CentOS 软件源已成功更新为阿里云镜像！"
-}
-
-# 添加系统依赖检查函数
-check_system_dependencies() {
-    print_section "检查系统依赖"
-
-    # 检查 root 权限
-    if [ "$EUID" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
-        print_error "此脚本需要 root 权限或 sudo 命令"
-        exit 1
-    fi
-
-    # 定义依赖项及其对应的包名
-    declare -A dependencies=(
-        ["wget"]="wget"
-        ["tar"]="tar"
-        ["gcc"]="gcc"
-        ["g++"]="gcc-c++"
-        ["make"]="make"
-        ["cmake"]="cmake"
-        ["bison"]="bison"
-        ["perl"]="perl"
-        ["git"]="git"
-        ["curl"]="curl"
-        ["vim"]="vim"
-        ["unzip"]="unzip"
-        ["net-tools"]="net-tools"
-        ["telnet"]="telnet"
-    )
-
-    # 检查每个依赖
-    for cmd in "${!dependencies[@]}"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            print_warning "未检测到 $cmd 命令，正在安装..."
-            if command -v yum >/dev/null 2>&1; then
-                sudo yum install -y "${dependencies[$cmd]}"
-            elif command -v apt-get >/dev/null 2>&1; then
-                sudo apt-get update
-                sudo apt-get install -y "${dependencies[$cmd]}"
-            elif command -v dnf >/dev/null 2>&1; then
-                sudo dnf install -y "${dependencies[$cmd]}"
-            else
-                print_error "无法找到包管理器（yum/apt-get/dnf），请手动安装 ${dependencies[$cmd]}"
-                exit 1
-            fi
-            if [ $? -eq 0 ]; then
-                print_success "${dependencies[$cmd]} 安装完成"
-            else
-                print_error "${dependencies[$cmd]} 安装失败"
-                exit 1
-            fi
-        else
-            print_success "$cmd 已安装"
-        fi
-    done
-
-    print_success "所有系统依赖检查完成"
-
-    # 直接返回主菜单
-    select_software
-}
-
-# 更新主菜单函数
+# 11. 主菜单函数
 select_software() {
     print_info "Please select an option:"
     print_info "1) Update CentOS repositories"
@@ -4206,7 +4167,8 @@ select_software() {
 }
 
 
-# 8. 主函数
+
+# 12. 主函数
 # ======================
 main() {
     print_info "HarborKod Software Shell Manager"
@@ -4215,6 +4177,8 @@ main() {
     print_info "GitHub: https://github.com/harborkod"
     select_software
 }
+
+
 
 # 执行主函数
 main
