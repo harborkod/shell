@@ -3935,31 +3935,49 @@ EOL
 
 zookeeper_install_verify() {
     print_section "验证 ZooKeeper 安装"
-
+    
     print_step "检查进程..."
     if ! pgrep -f "org.apache.zookeeper.server.quorum.QuorumPeerMain" > /dev/null; then
         print_error "ZooKeeper 进程未运行"
         exit 1
     fi
-
+    
     print_step "检查端口..."
-    if ! netstat -tuln | grep ":${ZOOKEEPER_PORT}" > /dev/null; then
+    # 使用重试策略检查端口绑定
+    local max_retries=10
+    local retry_count=0
+    local port_bound=false
+    
+    while [ $retry_count -lt $max_retries ] && [ "$port_bound" = false ]; do
+        if netstat -tuln | grep -E ":(${ZOOKEEPER_PORT})\s" > /dev/null || netstat -tuln | grep -E ":::(${ZOOKEEPER_PORT})" > /dev/null; then
+            port_bound=true
+            print_success "检测到 ZooKeeper 端口 ${ZOOKEEPER_PORT} 已绑定"
+        else
+            retry_count=$((retry_count+1))
+            if [ $retry_count -lt $max_retries ]; then
+                print_info "端口未就绪，3秒后重试 ($retry_count/$max_retries)..."
+                sleep 3
+            fi
+        fi
+    done
+    
+    if [ "$port_bound" = false ]; then
         print_error "ZooKeeper 端口 ${ZOOKEEPER_PORT} 未监听"
+        print_info "请手动检查服务状态: systemctl status zookeeper"
+        print_info "检查端口状态: netstat -tuln | grep ${ZOOKEEPER_PORT}"
         exit 1
     fi
-
+    
     print_step "测试简单连接..."
-    # 使用我们刚刚配置的环境变量确保脚本找到正确的配置文件
     if ! echo "ruok" | nc localhost ${ZOOKEEPER_PORT} 2>/dev/null | grep -q "imok"; then
         print_warning "ZooKeeper 4lw 连接测试失败，尝试另一种方式验证..."
-
-        # 使用zkServer.sh status，并明确指定配置文件路径
+        
         if ! ZOOCFGDIR=${ZOOKEEPER_CONF_DIR} ${ZOOKEEPER_INSTALL_DIR}/bin/zkServer.sh status; then
             print_error "ZooKeeper 连接测试失败"
             exit 1
         fi
     fi
-
+    
     print_success "ZooKeeper 验证完成，服务运行正常"
 }
 
